@@ -40,17 +40,14 @@ export async function registerForPushNotificationsAsync() {
     console.warn('Failed to get push token for push notification!');
     return;
   }
-  
   try {
-    // In a real app with EAS configured, you would use:
-    // const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    // token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-    
-    // For this local mock environment, we just return a fake token
-    token = 'mock-push-token-dev';
-    console.log("Mock push token registered:", token);
+    // Try to get actual Expo Push Token
+    const projectId = 'your-expo-project-id'; // Normally from Constants.expoConfig?.extra?.eas?.projectId;
+    token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    console.log("Expo push token registered:", token);
   } catch (e) {
-    console.warn('Failed to fetch push token', e);
+    console.warn('Failed to fetch real push token, falling back to mock', e);
+    token = 'mock-push-token-dev';
   }
 
   return token;

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { View, StyleSheet, Dimensions, Animated, Easing } from 'react-native';
 import { useKeepAwake } from 'expo-keep-awake';
 import QRCode from 'react-native-qrcode-svg';
@@ -36,20 +36,26 @@ export default function QRDisplayScreen() {
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let refreshInterval: NodeJS.Timeout;
     const init = async () => {
-      const shifts = await apiClient.supervisor.listShifts();
-      if (shifts.length > 0) {
-        const activeShift = shifts[0];
-        setShift(activeShift);
-        generateToken(activeShift.id);
-        fetchHeadcount(activeShift.id);
-        
-        interval = setInterval(() => fetchHeadcount(activeShift.id), 2000); // Poll fast for demo
+      try {
+        const shifts = await apiClient.supervisor.listShifts();
+        if (shifts.length > 0) {
+          const activeShift = shifts[0];
+          setShift(activeShift);
+          generateToken(activeShift.id);
+          // Prime headcount immediately
+          await fetchHeadcount(activeShift.id);
+          // Poll every 5 seconds — real-time push comes from the muster WS
+          // when a muster is active; this keeps the kiosk live otherwise.
+          refreshInterval = setInterval(() => fetchHeadcount(activeShift.id), 5000);
+        }
+      } catch (e) {
+        console.error('QR kiosk init error:', e);
       }
     };
     init();
-    return () => clearInterval(interval);
+    return () => clearInterval(refreshInterval);
   }, []);
 
   // ---------------------------------------------------------------------------

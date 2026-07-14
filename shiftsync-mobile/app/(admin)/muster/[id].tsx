@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, FlatList, LayoutAnimation, UIManager, Platform } from 'react-native';
 import { Screen, Text, Card, Spinner, TallyTag } from '../../../src/components/ui';
 import { spacing, useTheme } from '../../../src/theme';
 import { apiClient } from '../../../src/api/client';
 import { useLocalSearchParams } from 'expo-router';
 import { useKeepAwake } from 'expo-keep-awake';
+import { useStompWebSocket } from '../../../src/hooks/useStompWebSocket';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -19,32 +20,34 @@ export default function AdminMusterView() {
   const [elapsed, setElapsed] = useState(0);
   const [connectionError, setConnectionError] = useState(false);
 
-  const fetchStatus = async () => {
-    try {
-      const data = await apiClient.muster.status(id as string);
-      
-      // Animate out checked-in workers
-      if (status && status.unaccounted.length !== data.unaccounted.length) {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      }
-      
-      setStatus(data);
-      setConnectionError(false);
-    } catch (e) {
-      setConnectionError(true);
+  const handleMusterUpdate = useCallback((data: any) => {
+    if (status && status.unaccounted?.length !== data.unaccounted?.length) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     }
-  };
+    setStatus(data);
+    setConnectionError(false);
+  }, [status]);
 
+  // Connect STOMP WebSocket to the emergency service
+  const { isConnected: wsConnected } = useStompWebSocket({
+    topic: id ? `/topic/musters/${id}` : '',
+    onMessage: handleMusterUpdate,
+    enabled: !!id,
+  });
+
+  // Show reconnection banner when WS drops
+  useEffect(() => {
+    if (id) setConnectionError(!wsConnected);
+  }, [wsConnected, id]);
+
+  // Prime state with one REST call on mount
   useEffect(() => {
     if (!id) return;
-    const interval = setInterval(fetchStatus, 2000);
+    apiClient.muster.status(id as string).then(setStatus).catch(() => setConnectionError(true));
+    // Elapsed timer
     const timer = setInterval(() => setElapsed(prev => prev + 1), 1000);
-
-    return () => {
-      clearInterval(interval);
-      clearInterval(timer);
-    };
-  }, [id, status]);
+    return () => clearInterval(timer);
+  }, [id]);
 
   if (!status) {
     if (connectionError) {
@@ -88,7 +91,7 @@ export default function AdminMusterView() {
 
       {connectionError && (
         <View style={[styles.errorBar, { backgroundColor: theme.anthracite }]}>
-          <Text variant="label" style={{ color: theme.dust, fontSize: 24 }}>Reconnecting — showing last known state, 4s ago.</Text>
+          <Text variant="label" style={{ color: theme.dust, fontSize: 24 }}>⚡ Live feed reconnecting — showing last known state.</Text>
         </View>
       )}
 

@@ -35,6 +35,18 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       // Persist refresh token
       await tokenStorage.setItemAsync(REFRESH_TOKEN_KEY, refreshToken);
       
+      // Register Push Token
+      try {
+        const { registerForPushNotificationsAsync } = await import('../notifications/push');
+        const pushToken = await registerForPushNotificationsAsync();
+        if (pushToken) {
+          const { apiClient } = await import('../../api/client');
+          await apiClient.users.registerDevice(pushToken);
+        }
+      } catch (e) {
+        console.warn("Failed to register push device", e);
+      }
+
       set({ user, accessToken, isLoading: false });
     } catch (e) {
       set({ isLoading: false });

@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, FlatList, LayoutAnimation, UIManager, Platform, Alert } from 'react-native';
 import { Screen, Text, Card, Button, Spinner, TallyTag, TaskModal } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { apiClient } from '../../src/api/client';
 import { useKeepAwake } from 'expo-keep-awake';
 import { router } from 'expo-router';
+import { useStompWebSocket } from '../../src/hooks/useStompWebSocket';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -20,7 +21,29 @@ export default function MusterScreen() {
   const [connectionError, setConnectionError] = useState(false);
   const [selectedTaskWorker, setSelectedTaskWorker] = useState<{ id: string, name: string } | null>(null);
 
-  // Auto-initiate for the demo since the SlideToConfirm handles the friction
+  // Handle live WebSocket updates from the emergency service
+  const handleMusterUpdate = useCallback((data: any) => {
+    // Animate the list when unaccounted changes
+    if (status && status.unaccounted?.length !== data.unaccounted?.length) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    }
+    setStatus(data);
+    setConnectionError(false);
+  }, [status]);
+
+  // Connect STOMP WebSocket — only once we have a musterId
+  const { isConnected: wsConnected } = useStompWebSocket({
+    topic: musterId ? `/topic/musters/${musterId}` : '',
+    onMessage: handleMusterUpdate,
+    enabled: !!musterId,
+  });
+
+  // Show reconnection banner when WebSocket drops
+  useEffect(() => {
+    if (musterId) setConnectionError(!wsConnected);
+  }, [wsConnected, musterId]);
+
+  // Auto-initiate muster then do a single REST fetch to prime state (WS takes over after)
   useEffect(() => {
     const initMuster = async () => {
       try {
@@ -28,7 +51,9 @@ export default function MusterScreen() {
         const zone = shifts[0]?.departmentId || 'ZONE 2';
         const newMuster = await apiClient.muster.initiate(zone);
         setMusterId(newMuster.id);
-        fetchStatus(newMuster.id);
+        // Prime state with one REST call — subsequent updates arrive via WS
+        const data = await apiClient.muster.status(newMuster.id);
+        setStatus(data);
       } catch (e) {
         console.error(e);
       }
@@ -36,32 +61,11 @@ export default function MusterScreen() {
     initMuster();
   }, []);
 
-  const fetchStatus = async (id: string) => {
-    try {
-      const data = await apiClient.muster.status(id);
-      
-      // Animate the list when unaccounted changes
-      if (status && status.unaccounted.length !== data.unaccounted.length) {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      }
-      
-      setStatus(data);
-      setConnectionError(false);
-    } catch (e) {
-      setConnectionError(true);
-    }
-  };
-
+  // Elapsed timer (UI only — not polling)
   useEffect(() => {
-    if (!musterId) return;
-    const interval = setInterval(() => fetchStatus(musterId), 2000);
     const timer = setInterval(() => setElapsed(prev => prev + 1), 1000);
-
-    return () => {
-      clearInterval(interval);
-      clearInterval(timer);
-    };
-  }, [musterId, status]);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleMarkPresent = async (workerId: string) => {
     if (!musterId) return;
@@ -125,7 +129,7 @@ export default function MusterScreen() {
       {/* Connection Resiliency Bar */}
       {connectionError && (
         <View style={[styles.errorBar, { backgroundColor: theme.anthracite }]}>
-          <Text variant="label" style={{ color: theme.dust }}>Reconnecting — showing last known state, 4s ago.</Text>
+          <Text variant="label" style={{ color: theme.dust }}>⚡ Live feed reconnecting — showing last known state.</Text>
         </View>
       )}
 

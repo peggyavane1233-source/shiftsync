@@ -44,7 +44,7 @@ export default function HeadcountScreen() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 15000); // 15s auto-refresh
+    const interval = setInterval(loadData, 10000); // 10s refresh (attendance service REST only)
     return () => clearInterval(interval);
   }, [shift]);
 

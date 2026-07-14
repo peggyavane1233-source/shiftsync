@@ -10,9 +10,9 @@ import { ENDPOINTS } from './endpoints';
 import { CheckInRequest } from './types';
 
 // THE SINGLE FLAG
-export const USE_MOCK_API = true;
+export const USE_MOCK_API = false;
 
-const BASE_URL = 'https://api.shiftsync.io';
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 // Mock session context (In a real app, this comes from a secure store / zustand)
 let currentToken: string | null = null;
@@ -58,11 +58,11 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}, isRetry 
 // Client Interface
 export const apiClient = {
   auth: {
-    login: async (email: string) => {
+    login: async (email: string, password?: string) => {
       if (USE_MOCK_API) return mockHandlers.auth.login(email);
       return apiFetch<{ accessToken: string; refreshToken: string }>(ENDPOINTS.auth.login, {
         method: 'POST',
-        body: JSON.stringify({ email })
+        body: JSON.stringify({ email, password })
       });
     }
   },
@@ -188,19 +188,23 @@ export const apiClient = {
   muster: {
     initiate: async (zone: string) => {
       if (USE_MOCK_API) return mockHandlers.muster.initiate(zone, currentUserId);
-      return apiFetch<any>('/v1/muster', { method: 'POST', body: JSON.stringify({ zone }) });
+      // Backend InitiateRequest expects { zone: UUID }
+      return apiFetch<any>('/v1/musters', { method: 'POST', body: JSON.stringify({ zone }) });
     },
     status: async (musterId: string) => {
       if (USE_MOCK_API) return mockHandlers.muster.status(musterId);
-      return apiFetch<any>(`/v1/muster/${musterId}`);
+      // Backend GET /v1/musters/{id} returns EmergencyMuster only.
+      // Until a /status endpoint is added, we return the flat entity.
+      return apiFetch<any>(`/v1/musters/${musterId}`);
     },
     markPresent: async (musterId: string, workerId: string) => {
       if (USE_MOCK_API) return mockHandlers.muster.markPresent(musterId, workerId);
-      return apiFetch<any>(`/v1/muster/${musterId}/present`, { method: 'POST', body: JSON.stringify({ workerId }) });
+      // Backend expects { userId } not { workerId }
+      return apiFetch<any>(`/v1/musters/${musterId}/present`, { method: 'POST', body: JSON.stringify({ userId: workerId }) });
     },
     close: async (musterId: string) => {
       if (USE_MOCK_API) return mockHandlers.muster.close(musterId, currentUserId);
-      return apiFetch<any>(`/v1/muster/${musterId}/close`, { method: 'POST' });
+      return apiFetch<any>(`/v1/musters/${musterId}/close`, { method: 'POST' });
     }
   },
   tasks: {
@@ -229,6 +233,13 @@ export const apiClient = {
     create: async (userData: any) => {
       if (USE_MOCK_API) return mockHandlers.users.create(userData);
       return apiFetch<any>('/v1/users', { method: 'POST', body: JSON.stringify(userData) });
+    },
+    registerDevice: async (token: string) => {
+      if (USE_MOCK_API) return;
+      return apiFetch<any>('/v1/users/me/devices', {
+        method: 'POST',
+        body: JSON.stringify({ token, platform: 'expo' })
+      });
     }
   }
 };
