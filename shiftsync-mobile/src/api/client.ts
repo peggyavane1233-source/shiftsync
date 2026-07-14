@@ -1,0 +1,234 @@
+/**
+ * src/api/client.ts
+ * PURPOSE: The ONLY place the app talks to a server. 
+ * Fetches are routed through here to attach JWTs and handle common errors.
+ * Flips between Mock and Real using USE_MOCK_API flag.
+ */
+
+import { mockHandlers } from './mock/handlers';
+import { ENDPOINTS } from './endpoints';
+import { CheckInRequest } from './types';
+
+// THE SINGLE FLAG
+export const USE_MOCK_API = true;
+
+const BASE_URL = 'https://api.shiftsync.io';
+
+// Mock session context (In a real app, this comes from a secure store / zustand)
+let currentToken: string | null = null;
+let currentUserId: string = 'usr-wrk-0000-0000-0000-000000000001'; // Default to first worker for mock
+
+export const setMockUser = (userId: string) => { currentUserId = userId; };
+export const setAuthToken = (token: string) => { currentToken = token; };
+
+// Base fetch wrapper
+async function apiFetch<T>(endpoint: string, options: RequestInit = {}, isRetry = false): Promise<T> {
+  const headers = new Headers(options.headers || {});
+  headers.set('Content-Type', 'application/json');
+  if (currentToken) {
+    headers.set('Authorization', `Bearer ${currentToken}`);
+  }
+
+  const response = await fetch(`${BASE_URL}${endpoint}`, {
+    ...options,
+    headers,
+  });
+
+  if (!response.ok) {
+    if (response.status === 401 && !isRetry) {
+      try {
+        const { useAuthStore } = await import('../features/auth/store');
+        await useAuthStore.getState().restoreSession();
+        // Since restoreSession updates the currentToken via setAuthToken, we retry:
+        if (currentToken) {
+           return apiFetch<T>(endpoint, options, true);
+        }
+      } catch (e) {
+        // If refresh fails, restoreSession already clears the session
+      }
+    }
+
+    const errorData = await response.json().catch(() => null);
+    throw errorData || new Error(`API Error: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+// Client Interface
+export const apiClient = {
+  auth: {
+    login: async (email: string) => {
+      if (USE_MOCK_API) return mockHandlers.auth.login(email);
+      return apiFetch<{ accessToken: string; refreshToken: string }>(ENDPOINTS.auth.login, {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      });
+    }
+  },
+  shifts: {
+    listMine: async () => {
+      if (USE_MOCK_API) return mockHandlers.shifts.listMine(currentUserId);
+      return apiFetch<any>(ENDPOINTS.shifts.listMine);
+    },
+    assign: async (shiftId: string, userIds: string[]) => {
+      if (USE_MOCK_API) return mockHandlers.shifts.assign(shiftId, userIds);
+      return apiFetch<any>(ENDPOINTS.shifts.assign(shiftId), {
+        method: 'POST',
+        body: JSON.stringify({ userIds })
+      });
+    },
+    confirm: async (assignmentId: string) => {
+      if (USE_MOCK_API) return mockHandlers.shifts.confirm(assignmentId);
+      return apiFetch<any>(ENDPOINTS.shifts.confirmAssignment(assignmentId), { method: 'POST' });
+    },
+    swap: async (assignmentId: string, reason: string) => {
+      if (USE_MOCK_API) return mockHandlers.shifts.swap(assignmentId, reason);
+      return apiFetch<any>(ENDPOINTS.swaps.propose, { 
+        method: 'POST',
+        body: JSON.stringify({ assignmentId, reason })
+      });
+    },
+    approveSwap: async (assignmentId: string, newUserId: string) => {
+      if (USE_MOCK_API) return mockHandlers.shifts.approveSwap(assignmentId, newUserId);
+      return apiFetch<any>(`/v1/swaps/${assignmentId}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ newUserId })
+      });
+    },
+    unassign: async (assignmentId: string) => {
+      if (USE_MOCK_API) return mockHandlers.shifts.unassign(assignmentId);
+      return apiFetch<any>(`/v1/assignments/${assignmentId}`, { method: 'DELETE' });
+    },
+    availableWorkers: async (shiftId: string) => {
+      if (USE_MOCK_API) return mockHandlers.shifts.availableWorkers(shiftId);
+      return apiFetch<any[]>(`/v1/shifts/${shiftId}/available-workers`);
+    },
+    create: async (shiftData: { departmentId: string, startTime: string, endTime: string, shiftType: 'DAY' | 'NIGHT', requiredWorkers: number }) => {
+      if (USE_MOCK_API) return mockHandlers.shifts.create(shiftData, currentUserId);
+      return apiFetch<any>('/v1/shifts', {
+        method: 'POST',
+        body: JSON.stringify(shiftData)
+      });
+    },
+    cancel: async (shiftId: string) => {
+      if (USE_MOCK_API) return mockHandlers.shifts.cancel(shiftId);
+      return apiFetch<any>(`/v1/shifts/${shiftId}`, { method: 'DELETE' });
+    }
+  },
+  attendance: {
+    checkin: async (req: CheckInRequest) => {
+      if (USE_MOCK_API) return mockHandlers.attendance.checkin(req, currentUserId);
+      return apiFetch<any>(ENDPOINTS.attendance.checkin, {
+        method: 'POST',
+        body: JSON.stringify(req)
+      });
+    },
+    checkout: async (req: import('./types').CheckOutRequest) => {
+      if (USE_MOCK_API) return mockHandlers.attendance.checkout(req, currentUserId);
+      return apiFetch<any>(ENDPOINTS.attendance.checkout, {
+        method: 'POST',
+        body: JSON.stringify(req)
+      });
+    },
+    mine: async () => {
+      if (USE_MOCK_API) return mockHandlers.attendance.mine(currentUserId);
+      return apiFetch<any>(ENDPOINTS.attendance.mine);
+    }
+  },
+  fatigue: {
+    me: async () => {
+      if (USE_MOCK_API) return mockHandlers.fatigue.me(currentUserId);
+      return apiFetch<any>(ENDPOINTS.fatigue.me);
+    },
+    selfReport: async (req: { sleepHours: number; alertness: number }) => {
+      if (USE_MOCK_API) return mockHandlers.fatigue.selfReport(req, currentUserId);
+      return apiFetch<any>('/v1/fatigue/self-report', {
+        method: 'POST',
+        body: JSON.stringify(req)
+      });
+    }
+  },
+  notifications: {
+    me: async () => {
+      if (USE_MOCK_API) return mockHandlers.notifications.me(currentUserId);
+      return apiFetch<import('../types').AppNotification[]>('/v1/notifications');
+    },
+    confirm: async (id: string) => {
+      if (USE_MOCK_API) return mockHandlers.notifications.confirm(id, currentUserId);
+      return apiFetch<any>(`/v1/notifications/${id}/confirm`, { method: 'POST' });
+    }
+  },
+  supervisor: {
+    listShifts: async () => {
+      if (USE_MOCK_API) return mockHandlers.shifts.listSupervisorShifts(currentUserId);
+      return apiFetch<any>('/v1/supervisor/shifts');
+    },
+    headcount: async (shiftId: string) => {
+      if (USE_MOCK_API) return mockHandlers.attendance.headcount(shiftId);
+      return apiFetch<any>(`/v1/attendance/shifts/${shiftId}/headcount`);
+    },
+    markManual: async (shiftId: string, workerId: string) => {
+      if (USE_MOCK_API) return mockHandlers.attendance.markManual(shiftId, workerId);
+      return apiFetch<any>(`/v1/attendance/shifts/${shiftId}/manual`, {
+        method: 'POST', body: JSON.stringify({ workerId })
+      });
+    },
+    listFatigueAlerts: async () => {
+      if (USE_MOCK_API) return mockHandlers.fatigue.listAlerts();
+      return apiFetch<any>('/v1/supervisor/fatigue-alerts');
+    },
+    overrideFatigue: async (userId: string, reason: string) => {
+      if (USE_MOCK_API) return mockHandlers.fatigue.overrideAlert(userId, reason);
+      return apiFetch<any>(`/v1/fatigue/${userId}/override`, {
+        method: 'POST', body: JSON.stringify({ reason })
+      });
+    }
+  },
+  muster: {
+    initiate: async (zone: string) => {
+      if (USE_MOCK_API) return mockHandlers.muster.initiate(zone, currentUserId);
+      return apiFetch<any>('/v1/muster', { method: 'POST', body: JSON.stringify({ zone }) });
+    },
+    status: async (musterId: string) => {
+      if (USE_MOCK_API) return mockHandlers.muster.status(musterId);
+      return apiFetch<any>(`/v1/muster/${musterId}`);
+    },
+    markPresent: async (musterId: string, workerId: string) => {
+      if (USE_MOCK_API) return mockHandlers.muster.markPresent(musterId, workerId);
+      return apiFetch<any>(`/v1/muster/${musterId}/present`, { method: 'POST', body: JSON.stringify({ workerId }) });
+    },
+    close: async (musterId: string) => {
+      if (USE_MOCK_API) return mockHandlers.muster.close(musterId, currentUserId);
+      return apiFetch<any>(`/v1/muster/${musterId}/close`, { method: 'POST' });
+    }
+  },
+  tasks: {
+    create: async (req: import('./types').CreateTaskRequest) => {
+      if (USE_MOCK_API) return mockHandlers.tasks.create(req, currentUserId);
+      return apiFetch<import('./types').Task>('/v1/tasks', { method: 'POST', body: JSON.stringify(req) });
+    },
+    mine: async () => {
+      if (USE_MOCK_API) return mockHandlers.tasks.mine(currentUserId);
+      return apiFetch<import('./types').Task[]>('/v1/tasks/mine');
+    },
+    acknowledge: async (taskId: string) => {
+      if (USE_MOCK_API) return mockHandlers.tasks.acknowledge(taskId);
+      return apiFetch<any>(`/v1/tasks/${taskId}/acknowledge`, { method: 'POST' });
+    }
+  },
+  users: {
+    myCerts: async () => {
+      if (USE_MOCK_API) return mockHandlers.users.myCerts(currentUserId);
+      return apiFetch<any[]>('/v1/users/me/certs');
+    },
+    list: async () => {
+      if (USE_MOCK_API) return mockHandlers.users.list();
+      return apiFetch<any[]>('/v1/users');
+    },
+    create: async (userData: any) => {
+      if (USE_MOCK_API) return mockHandlers.users.create(userData);
+      return apiFetch<any>('/v1/users', { method: 'POST', body: JSON.stringify(userData) });
+    }
+  }
+};

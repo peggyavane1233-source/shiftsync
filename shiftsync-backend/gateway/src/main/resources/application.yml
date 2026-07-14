@@ -1,0 +1,78 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gateway
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  cloud:
+    gateway:
+      routes:
+        - id: auth-service
+          uri: http://localhost:8081
+          predicates:
+            - Path=/v1/auth/**
+        - id: user-service
+          uri: http://localhost:8082
+          predicates:
+            - Path=/v1/users/**, /v1/departments/**
+          filters:
+            - JwtAuthFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 100
+                key-resolver: "#{@userKeyResolver}"
+        - id: shift-service
+          uri: ${SHIFT_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/v1/shifts/**, /v1/swaps/**
+          filters:
+            - JwtAuthFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 100
+                key-resolver: "#{@userKeyResolver}"
+        - id: attendance-service
+          uri: ${ATTENDANCE_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/v1/attendance/**
+          filters:
+            - JwtAuthFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 100
+                key-resolver: "#{@userKeyResolver}"
+        - id: fatigue-service
+          uri: ${FATIGUE_SERVICE_URL:http://localhost:8085}
+          predicates:
+            - Path=/v1/fatigue/**
+          filters:
+            - JwtAuthFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 100
+                key-resolver: "#{@userKeyResolver}"
+        - id: emergency-service
+          uri: ${EMERGENCY_SERVICE_URL:http://localhost:8086}
+          predicates:
+            - Path=/v1/musters/**
+          filters:
+            - JwtAuthFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 100
+                key-resolver: "#{@userKeyResolver}"
+
+app:
+  internal-secret: "dev-internal-secret-for-gateway"
+  security:
+    jwt:
+      public-key-path: classpath:keys/public.pem

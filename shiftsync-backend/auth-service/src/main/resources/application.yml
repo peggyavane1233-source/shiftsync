@@ -1,0 +1,29 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: auth-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/shiftsync_db
+    username: shiftsync
+    password: password
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+app:
+  security:
+    jwt:
+      private-key-path: classpath:keys/private.pem
+      public-key-path: classpath:keys/public.pem
+      access-expiration-ms: 900000 # 15 minutes
+      refresh-expiration-ms: 2592000000 # 30 days
+
+
