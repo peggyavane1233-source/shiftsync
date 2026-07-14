@@ -46,8 +46,17 @@ export default function AdminMusterView() {
     };
   }, [id, status]);
 
-  if (!status) return <Screen style={{ backgroundColor: theme.surface, justifyContent: 'center', alignItems: 'center' }}><Spinner /></Screen>;
-
+  if (!status) {
+    if (connectionError) {
+      return (
+        <Screen style={{ backgroundColor: theme.surface, justifyContent: 'center', alignItems: 'center' }}>
+          <Text variant="title" style={{ color: theme.danger }}>Muster Not Found</Text>
+          <Text variant="body" style={{ color: theme.dust, marginTop: spacing.md }}>No active roll call could be loaded.</Text>
+        </Screen>
+      );
+    }
+    return <Screen style={{ backgroundColor: theme.surface, justifyContent: 'center', alignItems: 'center' }}><Spinner /></Screen>;
+  }
   const { muster, unaccounted } = status;
   const isDangerTime = elapsed > 180;
   

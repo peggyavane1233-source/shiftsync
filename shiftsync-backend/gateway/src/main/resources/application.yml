@@ -70,6 +70,17 @@ spring:
                 redis-rate-limiter.replenishRate: 100
                 redis-rate-limiter.burstCapacity: 100
                 key-resolver: "#{@userKeyResolver}"
+        - id: reporting-service
+          uri: ${REPORTING_SERVICE_URL:http://localhost:8087}
+          predicates:
+            - Path=/v1/reports/**
+          filters:
+            - JwtAuthFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 100
+                key-resolver: "#{@userKeyResolver}"
 
 app:
   internal-secret: "dev-internal-secret-for-gateway"
