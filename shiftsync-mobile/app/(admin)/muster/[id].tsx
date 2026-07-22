@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, FlatList, LayoutAnimation, UIManager, Platform } from 'react-native';
 import { Screen, Text, Card, Spinner, TallyTag } from '../../../src/components/ui';
 import { spacing, useTheme } from '../../../src/theme';
-import { apiClient } from '../../../src/api/client';
+import { apiClient, USE_MOCK_API } from '../../../src/api/client';
 import { useLocalSearchParams } from 'expo-router';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useStompWebSocket } from '../../../src/hooks/useStompWebSocket';
@@ -20,34 +20,48 @@ export default function AdminMusterView() {
   const [elapsed, setElapsed] = useState(0);
   const [connectionError, setConnectionError] = useState(false);
 
-  const handleMusterUpdate = useCallback((data: any) => {
-    if (status && status.unaccounted?.length !== data.unaccounted?.length) {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    }
+  const fetchStatus = useCallback(async () => {
+    if (!id) return;
+    const data = await apiClient.muster.status(id as string);
     setStatus(data);
     setConnectionError(false);
-  }, [status]);
+  }, [id]);
 
-  // Connect STOMP WebSocket to the emergency service
+  const handleMusterUpdate = useCallback((data: any) => {
+    setStatus((prev: any) => {
+      if (prev && prev.unaccounted?.length !== data.unaccounted?.length) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      }
+      return data;
+    });
+    setConnectionError(false);
+  }, []);
+
   const { isConnected: wsConnected } = useStompWebSocket({
+    service: 'emergency',
     topic: id ? `/topic/musters/${id}` : '',
     onMessage: handleMusterUpdate,
-    enabled: !!id,
+    onReconnect: fetchStatus,
+    enabled: !USE_MOCK_API && !!id,
   });
 
-  // Show reconnection banner when WS drops
   useEffect(() => {
-    if (id) setConnectionError(!wsConnected);
-  }, [wsConnected, id]);
+    if (!USE_MOCK_API && id && status) setConnectionError(!wsConnected);
+  }, [wsConnected, id, status]);
 
-  // Prime state with one REST call on mount
   useEffect(() => {
     if (!id) return;
-    apiClient.muster.status(id as string).then(setStatus).catch(() => setConnectionError(true));
+    fetchStatus().catch(() => setConnectionError(true));
     // Elapsed timer
     const timer = setInterval(() => setElapsed(prev => prev + 1), 1000);
     return () => clearInterval(timer);
-  }, [id]);
+  }, [id, fetchStatus]);
+
+  useEffect(() => {
+    if (!USE_MOCK_API || !id) return;
+    const interval = setInterval(() => fetchStatus().catch(() => {}), 2000);
+    return () => clearInterval(interval);
+  }, [id, fetchStatus]);
 
   if (!status) {
     if (connectionError) {

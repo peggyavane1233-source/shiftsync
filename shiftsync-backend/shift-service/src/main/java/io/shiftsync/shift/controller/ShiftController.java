@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -53,20 +54,33 @@ public class ShiftController {
     }
     
     @PostMapping("/{id}/assignments")
-    public ResponseEntity<?> assignWorker(@PathVariable UUID id, @RequestBody Map<String, String> request) {
-        UUID workerId = UUID.fromString(request.get("userId"));
-        boolean override = Boolean.parseBoolean(request.getOrDefault("overrideFatigue", "false"));
-        
+    public ResponseEntity<?> assignWorker(@PathVariable UUID id, @RequestBody Map<String, Object> request) {
+        @SuppressWarnings("unchecked")
+        List<String> userIds = request.containsKey("userIds")
+                ? (List<String>) request.get("userIds")
+                : List.of((String) request.get("userId"));
+
         Shift shift = shiftRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Shift not found"));
-        
-        // Ensure this doesn't violate business rules
-        conflictDetector.verifyAssignmentAllowed(shift, workerId, override);
-        
-        ShiftAssignment assignment = new ShiftAssignment();
-        assignment.setId(UUID.randomUUID());
-        assignment.setShiftId(id);
-        assignment.setUserId(workerId);
-        return ResponseEntity.ok(assignmentRepository.save(assignment));
+        boolean override = Boolean.parseBoolean(String.valueOf(request.getOrDefault("overrideFatigue", "false")));
+
+        List<ShiftAssignment> created = new java.util.ArrayList<>();
+        for (String userIdStr : userIds) {
+            UUID workerId = UUID.fromString(userIdStr);
+            conflictDetector.verifyAssignmentAllowed(shift, workerId, override);
+            ShiftAssignment assignment = new ShiftAssignment();
+            assignment.setId(UUID.randomUUID());
+            assignment.setShiftId(id);
+            assignment.setUserId(workerId);
+            created.add(assignmentRepository.save(assignment));
+        }
+        return ResponseEntity.ok(created.size() == 1 ? created.get(0) : Map.of("success", true));
+    }
+
+    /** Alias: POST /v1/shifts/{assignmentId}/confirm (mobile contract). */
+    @PostMapping("/{assignmentId}/confirm")
+    public ResponseEntity<?> confirmAssignmentAlias(@PathVariable UUID assignmentId, @RequestHeader("X-User-Id") String userId) {
+        workflowService.confirmAssignment(assignmentId, UUID.fromString(userId));
+        return ResponseEntity.ok(Map.of("success", true));
     }
 
     @PostMapping("/assignments/{assignmentId}/confirm")

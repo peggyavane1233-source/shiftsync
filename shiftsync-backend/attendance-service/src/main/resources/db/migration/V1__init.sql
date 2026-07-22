@@ -1,6 +1,4 @@
--- V1__init.sql for attendance-service
-
-CREATE EXTENSION IF NOT EXISTS postgis;
+-- V1__init.sql for attendance-service (no PostGIS — underground live GIS disabled)
 
 DO $$ BEGIN
     CREATE TYPE attend_method AS ENUM ('QR','GPS','MANUAL');
@@ -15,8 +13,10 @@ CREATE TABLE IF NOT EXISTS attendance_records (
   method          attend_method NOT NULL,
   check_in_time   TIMESTAMPTZ,
   check_out_time  TIMESTAMPTZ,
-  check_in_loc    GEOGRAPHY(POINT, 4326),
-  check_out_loc   GEOGRAPHY(POINT, 4326),
+  check_in_lat    DOUBLE PRECISION,
+  check_in_lng    DOUBLE PRECISION,
+  check_out_lat   DOUBLE PRECISION,
+  check_out_lng   DOUBLE PRECISION,
   device_id       VARCHAR(120),
   captured_at     TIMESTAMPTZ NOT NULL,
   synced_at       TIMESTAMPTZ,

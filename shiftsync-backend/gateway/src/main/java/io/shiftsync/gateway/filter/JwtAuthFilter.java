@@ -2,6 +2,7 @@ package io.shiftsync.gateway.filter;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
+import io.shiftsync.gateway.config.JwtPublicKeyProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
@@ -19,11 +20,11 @@ public class JwtAuthFilter extends AbstractGatewayFilterFactory<JwtAuthFilter.Co
     @Value("${app.internal-secret}")
     private String internalSecret;
 
-    // For simplicity in dev, skipping strict signature check here.
-    // In prod, use jjwt parser with a PublicKey fetched from JWKS or configured.
+    private final JwtPublicKeyProvider keyProvider;
 
-    public JwtAuthFilter() {
+    public JwtAuthFilter(JwtPublicKeyProvider keyProvider) {
         super(Config.class);
+        this.keyProvider = keyProvider;
     }
 
     @Override
@@ -44,11 +45,7 @@ public class JwtAuthFilter extends AbstractGatewayFilterFactory<JwtAuthFilter.Co
             String token = authHeader.substring(7);
             
             try {
-                // Warning: In prod this must use .verifyWith(publicKey).build().parseSignedClaims()
-                // using an unverified JWT for dev structural placeholder.
-                int splitIndex = token.lastIndexOf('.');
-                String withoutSignature = token.substring(0, splitIndex + 1);
-                Claims claims = Jwts.parser().build().parseUnsecuredClaims(withoutSignature).getPayload();
+                Claims claims = parseClaims(token);
                 
                 String userId = claims.getSubject();
                 String role = claims.get("role", String.class);
@@ -68,6 +65,21 @@ public class JwtAuthFilter extends AbstractGatewayFilterFactory<JwtAuthFilter.Co
                 return onError(exchange, "Invalid Token", HttpStatus.UNAUTHORIZED);
             }
         };
+    }
+
+    private Claims parseClaims(String token) {
+        if (keyProvider.hasPublicKey()) {
+            PublicKey publicKey = keyProvider.getPublicKey();
+            return Jwts.parser()
+                    .verifyWith(publicKey)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+        }
+        // Dev fallback when public.pem is not deployed alongside auth-service keys.
+        int splitIndex = token.lastIndexOf('.');
+        String withoutSignature = token.substring(0, splitIndex + 1);
+        return Jwts.parser().build().parseUnsecuredClaims(withoutSignature).getPayload();
     }
 
     private Mono<Void> onError(ServerWebExchange exchange, String err, HttpStatus httpStatus) {

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, FlatList, LayoutAnimation, UIManager, Platform, Alert } from 'react-native';
 import { Screen, Text, Card, Button, Spinner, TallyTag, TaskModal } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
-import { apiClient } from '../../src/api/client';
+import { apiClient, USE_MOCK_API } from '../../src/api/client';
 import { useKeepAwake } from 'expo-keep-awake';
 import { router } from 'expo-router';
 import { useStompWebSocket } from '../../src/hooks/useStompWebSocket';
@@ -21,29 +21,34 @@ export default function MusterScreen() {
   const [connectionError, setConnectionError] = useState(false);
   const [selectedTaskWorker, setSelectedTaskWorker] = useState<{ id: string, name: string } | null>(null);
 
-  // Handle live WebSocket updates from the emergency service
-  const handleMusterUpdate = useCallback((data: any) => {
-    // Animate the list when unaccounted changes
-    if (status && status.unaccounted?.length !== data.unaccounted?.length) {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    }
+  const fetchStatus = useCallback(async (id: string) => {
+    const data = await apiClient.muster.status(id);
     setStatus(data);
     setConnectionError(false);
-  }, [status]);
+  }, []);
 
-  // Connect STOMP WebSocket — only once we have a musterId
+  const handleMusterUpdate = useCallback((data: any) => {
+    setStatus((prev: any) => {
+      if (prev && prev.unaccounted?.length !== data.unaccounted?.length) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      }
+      return data;
+    });
+    setConnectionError(false);
+  }, []);
+
   const { isConnected: wsConnected } = useStompWebSocket({
+    service: 'emergency',
     topic: musterId ? `/topic/musters/${musterId}` : '',
     onMessage: handleMusterUpdate,
-    enabled: !!musterId,
+    onReconnect: () => musterId && fetchStatus(musterId),
+    enabled: !USE_MOCK_API && !!musterId,
   });
 
-  // Show reconnection banner when WebSocket drops
   useEffect(() => {
-    if (musterId) setConnectionError(!wsConnected);
-  }, [wsConnected, musterId]);
+    if (!USE_MOCK_API && musterId && status) setConnectionError(!wsConnected);
+  }, [wsConnected, musterId, status]);
 
-  // Auto-initiate muster then do a single REST fetch to prime state (WS takes over after)
   useEffect(() => {
     const initMuster = async () => {
       try {
@@ -51,15 +56,20 @@ export default function MusterScreen() {
         const zone = shifts[0]?.departmentId || 'ZONE 2';
         const newMuster = await apiClient.muster.initiate(zone);
         setMusterId(newMuster.id);
-        // Prime state with one REST call — subsequent updates arrive via WS
-        const data = await apiClient.muster.status(newMuster.id);
-        setStatus(data);
+        await fetchStatus(newMuster.id);
       } catch (e) {
         console.error(e);
       }
     };
     initMuster();
-  }, []);
+  }, [fetchStatus]);
+
+  // Mock: poll status. Real: WebSocket.
+  useEffect(() => {
+    if (!USE_MOCK_API || !musterId) return;
+    const interval = setInterval(() => fetchStatus(musterId), 2000);
+    return () => clearInterval(interval);
+  }, [musterId, fetchStatus]);
 
   // Elapsed timer (UI only — not polling)
   useEffect(() => {

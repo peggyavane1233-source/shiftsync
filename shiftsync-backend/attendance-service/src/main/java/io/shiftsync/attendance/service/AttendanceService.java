@@ -8,6 +8,7 @@ import io.shiftsync.attendance.domain.AttendanceRecord;
 import io.shiftsync.attendance.domain.OutboxEvent;
 import io.shiftsync.attendance.repository.AttendanceRecordRepository;
 import io.shiftsync.attendance.repository.OutboxEventRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -30,6 +31,7 @@ public class AttendanceService {
     private final FatigueServiceClient fatigueClient;
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
+    private final boolean geofenceEnabled;
 
     public AttendanceService(AttendanceRecordRepository attendanceRepository,
                              OutboxEventRepository outboxEventRepository,
@@ -38,7 +40,8 @@ public class AttendanceService {
                              UserServiceClient userClient,
                              FatigueServiceClient fatigueClient,
                              RedisTemplate<String, Object> redisTemplate,
-                             ObjectMapper objectMapper) {
+                             ObjectMapper objectMapper,
+                             @Value("${app.geofence.enabled:false}") boolean geofenceEnabled) {
         this.attendanceRepository = attendanceRepository;
         this.outboxEventRepository = outboxEventRepository;
         this.qrService = qrService;
@@ -47,6 +50,7 @@ public class AttendanceService {
         this.fatigueClient = fatigueClient;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.geofenceEnabled = geofenceEnabled;
     }
 
     @Transactional
@@ -104,8 +108,9 @@ public class AttendanceService {
                 throw new SecurityException("NOT_ROSTERED");
             }
 
-            // 5. GPS Mode validation
-            if ("GPS".equals(req.method())) {
+            // 5. GPS Mode — live underground GIS disabled; accept check-in without geofence.
+            // Lat/lng may still be stored by clients for audit later; zone enforcement is off.
+            if ("GPS".equals(req.method()) && geofenceEnabled) {
                 boolean insideZone = false;
                 try {
                     insideZone = userClient.checkGeofence(req.departmentId(), req.lat(), req.lng());

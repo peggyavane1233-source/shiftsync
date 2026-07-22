@@ -29,7 +29,7 @@ spring:
         - id: shift-service
           uri: ${SHIFT_SERVICE_URL:http://localhost:8083}
           predicates:
-            - Path=/v1/shifts/**, /v1/swaps/**
+            - Path=/v1/shifts/**, /v1/swaps/**, /v1/supervisor/**, /v1/notifications/**, /v1/tasks/**
           filters:
             - JwtAuthFilter
             - name: RequestRateLimiter
@@ -51,7 +51,7 @@ spring:
         - id: fatigue-service
           uri: ${FATIGUE_SERVICE_URL:http://localhost:8085}
           predicates:
-            - Path=/v1/fatigue/**
+            - Path=/v1/fatigue/**, /v1/supervisor/fatigue-alerts
           filters:
             - JwtAuthFilter
             - name: RequestRateLimiter

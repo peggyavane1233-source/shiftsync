@@ -12,7 +12,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -118,10 +120,49 @@ public class MusterService {
         return muster;
     }
 
-    private void broadcast(UUID musterId, EmergencyMuster muster) {
-        messagingTemplate.convertAndSend("/topic/musters/" + musterId, muster);
+    /** Mock contract: { muster, unaccounted } */
+    public Map<String, Object> getMusterStatus(UUID musterId) {
+        EmergencyMuster muster = musterRepository.findById(musterId).orElse(null);
+        if (muster == null) return null;
+
+        List<Map<String, Object>> unaccounted = responseRepository.findByMusterId(musterId).stream()
+                .filter(r -> r.getStatus() == ResponseStatus.UNACCOUNTED)
+                .map(r -> {
+                    String shortId = r.getUserId().toString().replace("-", "").substring(0, 8).toUpperCase();
+                    Map<String, Object> worker = new LinkedHashMap<>();
+                    worker.put("id", r.getUserId());
+                    worker.put("displayName", "Worker " + shortId.substring(shortId.length() - 4));
+                    worker.put("employeeNo", "WRK-" + shortId);
+                    return worker;
+                })
+                .toList();
+
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("muster", musterToMap(muster));
+        status.put("unaccounted", unaccounted);
+        return status;
     }
-    
+
+    private Map<String, Object> musterToMap(EmergencyMuster muster) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", muster.getId());
+        m.put("initiatedBy", muster.getInitiatedBy());
+        m.put("zone", muster.getZone());
+        m.put("initiatedAt", muster.getInitiatedAt());
+        m.put("closedAt", muster.getClosedAt());
+        m.put("expectedWorkers", muster.getExpectedWorkers());
+        m.put("accountedWorkers", muster.getAccountedWorkers());
+        m.put("status", muster.getStatus());
+        return m;
+    }
+
+    private void broadcast(UUID musterId, EmergencyMuster muster) {
+        Map<String, Object> status = getMusterStatus(musterId);
+        if (status != null) {
+            messagingTemplate.convertAndSend("/topic/musters/" + musterId, status);
+        }
+    }
+
     public EmergencyMuster getMuster(UUID id) {
         return musterRepository.findById(id).orElse(null);
     }

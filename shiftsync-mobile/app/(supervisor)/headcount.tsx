@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert, ScrollView, Modal, Pressable } from 'react-native';
 import { RefreshCcw } from 'lucide-react-native';
 import { format, differenceInSeconds } from 'date-fns';
 import { Screen, Text, Button, Spinner, TallyTag, TaskModal } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
-import { apiClient } from '../../src/api/client';
+import { apiClient, USE_MOCK_API } from '../../src/api/client';
+import { useStompWebSocket } from '../../src/hooks/useStompWebSocket';
 
 export default function HeadcountScreen() {
   const theme = useTheme();
@@ -13,40 +14,60 @@ export default function HeadcountScreen() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'ALL' | 'PRESENT' | 'ABSENT'>('ALL');
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
-  const [now, setNow] = useState(new Date());
+  const [now, setNow] = useState<Date>(new Date());
 
   const [selectedWorker, setSelectedWorker] = useState<any>(null);
   const [assigningTaskWorker, setAssigningTaskWorker] = useState<{ id: string, name: string } | null>(null);
+  const [connectionError, setConnectionError] = useState(false);
 
-  const loadData = async () => {
-    try {
-      if (!shift) {
+  const fetchStats = useCallback(async (shiftId: string) => {
+    const stats = await apiClient.supervisor.headcount(shiftId);
+    setHeadcount(stats);
+    setLastUpdated(new Date());
+    setConnectionError(false);
+  }, []);
+
+  const handleHeadcountUpdate = useCallback((data: any) => {
+    setHeadcount(data);
+    setLastUpdated(new Date());
+    setConnectionError(false);
+  }, []);
+
+  useEffect(() => {
+    const loadShift = async () => {
+      try {
         const shifts = await apiClient.supervisor.listShifts();
         if (shifts.length > 0) {
           setShift(shifts[0]);
           await fetchStats(shifts[0].id);
         }
-      } else {
-        await fetchStats(shift.id);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+    loadShift();
+  }, [fetchStats]);
 
-  const fetchStats = async (shiftId: string) => {
-    const stats = await apiClient.supervisor.headcount(shiftId);
-    setHeadcount(stats);
-    setLastUpdated(new Date());
-  };
+  // Mock: poll. Real: WebSocket.
+  useEffect(() => {
+    if (!USE_MOCK_API || !shift) return;
+    const interval = setInterval(() => fetchStats(shift.id), 3000);
+    return () => clearInterval(interval);
+  }, [shift, fetchStats]);
+
+  const { isConnected: wsConnected } = useStompWebSocket({
+    service: 'attendance',
+    topic: shift ? `/topic/headcount/${shift.id}` : '',
+    onMessage: handleHeadcountUpdate,
+    onReconnect: () => shift && fetchStats(shift.id),
+    enabled: !USE_MOCK_API && !!shift,
+  });
 
   useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 10000); // 10s refresh (attendance service REST only)
-    return () => clearInterval(interval);
-  }, [shift]);
+    if (!USE_MOCK_API && shift) setConnectionError(!wsConnected);
+  }, [wsConnected, shift]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -132,6 +153,12 @@ export default function HeadcountScreen() {
           </View>
         </View>
         
+        {connectionError && (
+          <Text variant="label" style={{ color: theme.advisory, marginBottom: spacing.sm }}>
+            Live feed reconnecting — showing last known state.
+          </Text>
+        )}
+
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
             <Text variant="hero" style={{ color: theme.headlamp }}>{presentCount}</Text>

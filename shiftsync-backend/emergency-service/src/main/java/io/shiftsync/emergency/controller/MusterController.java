@@ -6,6 +6,7 @@ import io.shiftsync.emergency.service.MusterService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -40,16 +41,25 @@ public class MusterController {
         return ResponseEntity.ok(musterService.respond(id, request.userId(), supervisorId));
     }
 
+    /** POST /v1/musters/{id}/present — mock contract alias for mark. */
+    @PostMapping("/{id}/present")
+    public ResponseEntity<MusterResponse> markPresent(
+            @PathVariable UUID id,
+            @RequestHeader("X-User-Id") UUID supervisorId,
+            @RequestBody MarkSafeRequest request) {
+        return ResponseEntity.ok(musterService.respond(id, request.userId(), supervisorId));
+    }
+
     @PostMapping("/{id}/close")
     public ResponseEntity<EmergencyMuster> closeMuster(@PathVariable UUID id) {
         return ResponseEntity.ok(musterService.closeMuster(id));
     }
     
     @GetMapping("/{id}")
-    public ResponseEntity<EmergencyMuster> getMuster(@PathVariable UUID id) {
-        EmergencyMuster m = musterService.getMuster(id);
-        if (m == null) return ResponseEntity.notFound().build();
-        return ResponseEntity.ok(m);
+    public ResponseEntity<Map<String, Object>> getMuster(@PathVariable UUID id) {
+        Map<String, Object> status = musterService.getMusterStatus(id);
+        if (status == null) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(status);
     }
 
     public record InitiateRequest(UUID zone) {}

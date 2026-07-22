@@ -2,6 +2,7 @@ package io.shiftsync.attendance.controller;
 
 import io.shiftsync.attendance.domain.AttendanceRecord;
 import io.shiftsync.attendance.service.AttendanceService;
+import io.shiftsync.attendance.service.HeadcountService;
 import io.shiftsync.attendance.repository.AttendanceRecordRepository;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.ResponseEntity;
@@ -19,23 +20,30 @@ public class AttendanceController {
 
     private final AttendanceService attendanceService;
     private final AttendanceRecordRepository repository;
+    private final HeadcountService headcountService;
     private final RedisTemplate<String, Object> redisTemplate;
 
-    public AttendanceController(AttendanceService attendanceService, AttendanceRecordRepository repository, RedisTemplate<String, Object> redisTemplate) {
+    public AttendanceController(AttendanceService attendanceService,
+                                AttendanceRecordRepository repository,
+                                HeadcountService headcountService,
+                                RedisTemplate<String, Object> redisTemplate) {
         this.attendanceService = attendanceService;
         this.repository = repository;
+        this.headcountService = headcountService;
         this.redisTemplate = redisTemplate;
     }
 
     @PostMapping("/checkin")
     public ResponseEntity<AttendanceRecord> checkIn(@RequestBody AttendanceService.CheckInRequest request) {
         AttendanceRecord record = attendanceService.checkIn(request);
+        headcountService.broadcast(record.getShiftId());
         return ResponseEntity.ok(record);
     }
 
     @PostMapping("/checkout")
     public ResponseEntity<AttendanceRecord> checkOut(@RequestBody AttendanceService.CheckOutRequest request) {
         AttendanceRecord record = attendanceService.checkOut(request);
+        headcountService.broadcast(record.getShiftId());
         return ResponseEntity.ok(record);
     }
 
@@ -45,7 +53,6 @@ public class AttendanceController {
             return ResponseEntity.badRequest().build();
         }
 
-        // Process in capturedAt ASC order
         requests.sort(Comparator.comparing(AttendanceService.CheckInRequest::capturedAt));
 
         List<UUID> accepted = new ArrayList<>();
@@ -53,7 +60,6 @@ public class AttendanceController {
 
         for (var req : requests) {
             try {
-                // Determine if it's checkin or checkout based on method/payload. Assuming check-ins for now
                 attendanceService.checkIn(req);
                 accepted.add(req.clientUuid());
             } catch (Exception e) {
@@ -78,8 +84,28 @@ public class AttendanceController {
 
     @GetMapping("/active")
     public ResponseEntity<List<UUID>> getActiveWorkers(@RequestParam UUID zone) {
-        return ResponseEntity.ok(repository.findActiveWorkersByDepartmentId(zone));
+        return ResponseEntity.ok(headcountService.getActiveWorkersForZone(zone));
+    }
+
+    /** GET /v1/attendance/me — worker attendance history (mock contract). */
+    @GetMapping("/me")
+    public ResponseEntity<List<AttendanceRecord>> mine(@RequestHeader("X-User-Id") String userId) {
+        return ResponseEntity.ok(repository.findByUserIdOrderByCapturedAtDesc(UUID.fromString(userId)));
+    }
+
+    /** GET /v1/attendance/shifts/{shiftId}/headcount */
+    @GetMapping("/shifts/{shiftId}/headcount")
+    public ResponseEntity<Map<String, Object>> headcount(@PathVariable UUID shiftId) {
+        return ResponseEntity.ok(headcountService.getHeadcount(shiftId));
+    }
+
+    /** POST /v1/attendance/shifts/{shiftId}/manual */
+    @PostMapping("/shifts/{shiftId}/manual")
+    public ResponseEntity<AttendanceRecord> markManual(@PathVariable UUID shiftId,
+                                                         @RequestBody ManualMarkRequest body) {
+        return ResponseEntity.ok(headcountService.markManual(shiftId, body.workerId()));
     }
 
     public record SyncResponse(List<UUID> accepted, List<Map<String, Object>> rejected) {}
+    public record ManualMarkRequest(UUID workerId) {}
 }

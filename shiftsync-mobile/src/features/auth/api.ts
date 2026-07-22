@@ -2,47 +2,64 @@
  * src/features/auth/api.ts
  * PURPOSE: Abstract the login network calls away from the components.
  */
-import { apiClient } from '../../api/client';
+import { apiClient, USE_MOCK_API, setMockUser } from '../../api/client';
 import { LoginResponse, User } from './types';
 import { jwtDecode } from 'jwt-decode';
 
+function userFromJwt(accessToken: string, fallbackEmail = ''): User {
+  const decoded = jwtDecode<Record<string, string>>(accessToken);
+  const now = new Date().toISOString();
+  return {
+    id: decoded.sub || decoded.id || '',
+    email: decoded.email || fallbackEmail,
+    displayName: decoded.name || decoded.displayName || 'User',
+    role: (decoded.role as User['role']) || 'WORKER',
+    departmentId: decoded.deptId || decoded.departmentId,
+    employeeNo: decoded.employeeNo || '',
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+async function userFromMockLogin(email: string): Promise<User> {
+  const { db } = await import('../../api/mock/db');
+  const u = db.getUserByEmail(email);
+  if (!u) throw new Error('Invalid credentials');
+  setMockUser(u.id);
+  return u;
+}
+
 export const authApi = {
   loginWithEmail: async (email: string, password?: string): Promise<LoginResponse> => {
-    // Call the real API which requires email (and potentially password)
-    const res = await apiClient.auth.login(email);
+    const res = await apiClient.auth.login(email, password);
     if (!res.accessToken) throw new Error('Invalid login response');
-    
-    // Parse the JWT to get user info
-    let user: User | null = null;
-    try {
-       const decoded = jwtDecode<any>(res.accessToken);
-       // Transform decoded JWT into our User type based on token claims
-       user = {
-         id: decoded.sub || decoded.id,
-         name: decoded.name || 'User',
-         email: decoded.email || email,
-         role: decoded.role || 'WORKER',
-         departmentId: decoded.departmentId || 'dept-1'
-       } as User;
-    } catch (e) {
-       console.error("Failed to parse JWT", e);
+
+    if (USE_MOCK_API || res.accessToken === 'mock-jwt-token') {
+      return {
+        accessToken: res.accessToken,
+        refreshToken: res.refreshToken,
+        user: await userFromMockLogin(email),
+      };
     }
 
     return {
       accessToken: res.accessToken,
       refreshToken: res.refreshToken,
-      user: user as any
+      user: userFromJwt(res.accessToken, email),
     };
   },
-  
+
   refreshSession: async (refreshToken: string): Promise<LoginResponse> => {
-    // Note: apiClient.auth.refresh is not defined in client.ts yet, so let's use global fetch
-    // to avoid circular dependencies with apiClient interceptors
+    if (USE_MOCK_API || refreshToken === 'mock-refresh-token') {
+      throw new Error('Refresh failed');
+    }
+
     const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080';
     const response = await fetch(`${BASE_URL}/v1/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken })
+      body: JSON.stringify({ refreshToken }),
     });
 
     if (!response.ok) {
@@ -50,25 +67,10 @@ export const authApi = {
     }
 
     const res = await response.json();
-    
-    let user: User | null = null;
-    try {
-       const decoded = jwtDecode<any>(res.accessToken);
-       user = {
-         id: decoded.sub || decoded.id,
-         name: decoded.name || 'User',
-         email: decoded.email || '',
-         role: decoded.role || 'WORKER',
-         departmentId: decoded.departmentId || 'dept-1'
-       } as User;
-    } catch (e) {
-       console.error("Failed to parse JWT", e);
-    }
-
     return {
       accessToken: res.accessToken,
       refreshToken: res.refreshToken,
-      user: user as any
+      user: userFromJwt(res.accessToken),
     };
-  }
+  },
 };

@@ -25,12 +25,8 @@ public class FatigueController {
 
     /** GET /v1/fatigue/me — worker sees their own current score + risk level. */
     @GetMapping("/me")
-    public ResponseEntity<FatigueScore> getMyScore(@RequestHeader("X-User-Id") UUID userId) {
-        FatigueScore score = fatigueService.getLatestScore(userId);
-        if (score == null) {
-            return ResponseEntity.noContent().build();
-        }
-        return ResponseEntity.ok(score);
+    public ResponseEntity<Map<String, Object>> getMyScore(@RequestHeader("X-User-Id") UUID userId) {
+        return ResponseEntity.ok(fatigueService.getMyScoreView(userId));
     }
 
     /** POST /v1/fatigue/self-report — worker submits sleep hours + alertness (1-5). */
@@ -72,6 +68,15 @@ public class FatigueController {
             @RequestHeader("X-User-Id") UUID supervisorId,
             @RequestBody OverrideBody body) {
         return ResponseEntity.ok(fatigueService.overrideAlert(id, supervisorId, body.reason()));
+    }
+
+    /** POST /v1/fatigue/{userId}/override — mock contract alias (resolves latest active alert). */
+    @PostMapping("/{userId}/override")
+    public ResponseEntity<FatigueAlert> overrideByUser(
+            @PathVariable UUID userId,
+            @RequestHeader("X-User-Id") UUID supervisorId,
+            @RequestBody OverrideBody body) {
+        return ResponseEntity.ok(fatigueService.overrideAlertForUser(userId, supervisorId, body.reason()));
     }
 
     // ========== Internal endpoint (called by attendance-service) ==========

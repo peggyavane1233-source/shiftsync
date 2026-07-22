@@ -26,4 +26,13 @@ public interface FatigueScoreRepository extends JpaRepository<FatigueScore, UUID
         ORDER BY user_id, calculated_at DESC
         """, nativeQuery = true)
     List<FatigueScore> findLatestScoresForUsers(@Param("userIds") List<UUID> userIds);
+
+    /** Latest scores for workers at elevated risk — supervisor alert board. */
+    @Query(value = """
+        SELECT DISTINCT ON (user_id) *
+        FROM fatigue_scores
+        WHERE risk_level IN ('WARNING', 'CRITICAL')
+        ORDER BY user_id, calculated_at DESC
+        """, nativeQuery = true)
+    List<FatigueScore> findLatestByRiskLevels();
 }

@@ -86,5 +86,21 @@ public class AuthService {
         return new LoginResult(accessToken, rawRefreshToken);
     }
 
+    @Transactional
+    public LoginResult refresh(String rawRefreshToken) {
+        Optional<User> userOpt = refreshTokenRepository.findAll().stream()
+                .filter(t -> t.getRevokedAt() == null && t.getExpiresAt().isAfter(Instant.now()))
+                .filter(t -> passwordEncoder.matches(rawRefreshToken, t.getTokenHash()))
+                .findFirst()
+                .flatMap(t -> userRepository.findById(t.getUserId()));
+
+        if (userOpt.isEmpty()) {
+            throw new IllegalArgumentException("Invalid refresh token");
+        }
+
+        User user = userOpt.get();
+        return generateTokens(user, UUID.randomUUID());
+    }
+
     public record LoginResult(String accessToken, String refreshToken) {}
 }

@@ -14,4 +14,6 @@ public interface FatigueAlertRepository extends JpaRepository<FatigueAlert, UUID
 
     /** Specific unresolved alert by ID — for override endpoint. */
     Optional<FatigueAlert> findByIdAndResolvedAtIsNull(UUID id);
+
+    Optional<FatigueAlert> findFirstByUserIdAndResolvedAtIsNullOrderByTriggeredAtDesc(UUID userId);
 }

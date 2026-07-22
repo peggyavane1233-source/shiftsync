@@ -1,6 +1,4 @@
--- V1__init.sql
-
-CREATE EXTENSION IF NOT EXISTS postgis;
+-- V1__init.sql (no PostGIS — underground live GIS disabled)
 
 CREATE TABLE user_profiles (
   id              UUID PRIMARY KEY, -- matches users.id from Auth
@@ -17,7 +15,6 @@ CREATE TABLE departments (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name          VARCHAR(120) NOT NULL,
   mine_zone     VARCHAR(80)  NOT NULL,
-  geofence      GEOGRAPHY(POLYGON, 4326),
   supervisor_id UUID,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );

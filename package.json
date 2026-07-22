@@ -1,0 +1,12 @@
+{
+  "name": "shiftsync",
+  "private": true,
+  "description": "Root scripts — Expo app lives in shiftsync-mobile/",
+  "scripts": {
+    "start": "npm --prefix shiftsync-mobile start",
+    "android": "npm --prefix shiftsync-mobile run android",
+    "ios": "npm --prefix shiftsync-mobile run ios",
+    "web": "npm --prefix shiftsync-mobile run web",
+    "mobile": "npm --prefix shiftsync-mobile start"
+  }
+}

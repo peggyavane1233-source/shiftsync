@@ -45,5 +45,15 @@ public class AuthController {
         ));
     }
 
+    @PostMapping("/refresh")
+    public ResponseEntity<?> refresh(@RequestBody RefreshRequest request) {
+        AuthService.LoginResult result = authService.refresh(request.refreshToken());
+        return ResponseEntity.ok(Map.of(
+            "accessToken", result.accessToken(),
+            "refreshToken", result.refreshToken()
+        ));
+    }
+
     public record LoginRequest(String email, String password) {}
+    public record RefreshRequest(String refreshToken) {}
 }

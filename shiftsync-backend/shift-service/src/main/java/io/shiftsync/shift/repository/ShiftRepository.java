@@ -8,4 +8,5 @@ import java.util.UUID;
 
 public interface ShiftRepository extends JpaRepository<Shift, UUID> {
     List<Shift> findByDepartmentIdAndStartTimeBetween(UUID departmentId, Instant start, Instant end);
+    List<Shift> findByDepartmentId(UUID departmentId);
 }

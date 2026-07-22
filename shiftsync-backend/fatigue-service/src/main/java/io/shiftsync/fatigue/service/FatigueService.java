@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -147,6 +148,63 @@ public class FatigueService {
     /** Get active (unresolved) alerts for a worker. */
     public List<FatigueAlert> getActiveAlerts(UUID userId) {
         return alertRepository.findByUserIdAndResolvedAtIsNullOrderByTriggeredAtDesc(userId);
+    }
+
+    /** Latest scores at WARNING/CRITICAL — mock contract for supervisor alert list. */
+    public List<FatigueScore> listSupervisorAlerts() {
+        return scoreRepository.findLatestByRiskLevels();
+    }
+
+    /** Override by worker id — mock contract POST /v1/fatigue/{userId}/override */
+    @Transactional
+    public FatigueAlert overrideAlertForUser(UUID userId, UUID supervisorId, String reason) {
+        FatigueAlert alert = alertRepository
+                .findFirstByUserIdAndResolvedAtIsNullOrderByTriggeredAtDesc(userId)
+                .orElseThrow(() -> new IllegalArgumentException("No active alert for worker"));
+        return overrideAlert(alert.getId(), supervisorId, reason);
+    }
+
+    /** Enriched worker view — mock contract for GET /v1/fatigue/me */
+    public Map<String, Object> getMyScoreView(UUID userId) {
+        FatigueScore latest = getLatestScore(userId);
+        if (latest == null) {
+            return Map.of(
+                    "userId", userId,
+                    "score", 0,
+                    "riskLevel", "LOW",
+                    "lastAssessment", (Object) null,
+                    "history", List.of()
+            );
+        }
+
+        List<FatigueScore> trend = getTrend(userId, 30);
+        List<Map<String, Object>> history = trend.stream()
+                .map(s -> Map.<String, Object>of(
+                        "date", s.getCalculatedAt().toString(),
+                        "score", s.getScore()))
+                .toList();
+
+        Map<String, Object> lastAssessment = selfReportRepository
+                .findFirstByUserIdOrderByReportedAtDesc(userId)
+                .map(r -> Map.<String, Object>of(
+                        "date", r.getReportedAt().toString(),
+                        "sleepHours", r.getSleepHours(),
+                        "alertness", r.getAlertness()))
+                .orElse(null);
+
+        Map<String, Object> view = new java.util.LinkedHashMap<>();
+        view.put("userId", latest.getUserId());
+        view.put("score", latest.getScore());
+        view.put("riskLevel", latest.getRiskLevel().name());
+        view.put("calculatedAt", latest.getCalculatedAt());
+        view.put("hoursWorked24h", latest.getHoursWorked24h());
+        view.put("hoursWorked7d", latest.getHoursWorked7d());
+        view.put("nightShifts7d", latest.getNightShifts7d());
+        view.put("consecutiveDays", latest.getConsecutiveDays());
+        view.put("modelVersion", latest.getModelVersion());
+        view.put("lastAssessment", lastAssessment);
+        view.put("history", history);
+        return view;
     }
 
     // --- Request records ---

@@ -1,6 +1,5 @@
 -- V1__init.sql
 
-CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS citext;
 
 -- 6.1 Identity & Org
@@ -24,7 +23,6 @@ CREATE TABLE departments (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name          VARCHAR(120) NOT NULL,
   mine_zone     VARCHAR(80)  NOT NULL,
-  geofence      GEOGRAPHY(POLYGON, 4326),
   supervisor_id UUID REFERENCES users(id),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -102,8 +100,10 @@ CREATE TABLE attendance_records (
   method          attend_method NOT NULL,
   check_in_time   TIMESTAMPTZ,
   check_out_time  TIMESTAMPTZ,
-  check_in_loc    GEOGRAPHY(POINT, 4326),
-  check_out_loc   GEOGRAPHY(POINT, 4326),
+  check_in_lat    DOUBLE PRECISION,
+  check_in_lng    DOUBLE PRECISION,
+  check_out_lat   DOUBLE PRECISION,
+  check_out_lng   DOUBLE PRECISION,
   device_id       VARCHAR(120),
   captured_at     TIMESTAMPTZ NOT NULL,
   synced_at       TIMESTAMPTZ,
@@ -196,7 +196,8 @@ CREATE TABLE muster_responses (
   status       VARCHAR(16) NOT NULL DEFAULT 'UNACCOUNTED',
   responded_at TIMESTAMPTZ,
   responded_by UUID REFERENCES users(id),
-  location     GEOGRAPHY(POINT, 4326),
+  loc_lat      DOUBLE PRECISION,
+  loc_lng      DOUBLE PRECISION,
   UNIQUE (muster_id, user_id)
 );
 

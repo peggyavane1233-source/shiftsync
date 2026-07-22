@@ -10,9 +10,9 @@ import { ENDPOINTS } from './endpoints';
 import { CheckInRequest } from './types';
 
 // THE SINGLE FLAG
-export const USE_MOCK_API = false;
+export const USE_MOCK_API = true;
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080';
 
 // Mock session context (In a real app, this comes from a secure store / zustand)
 let currentToken: string | null = null;
