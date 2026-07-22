@@ -10,14 +10,17 @@ public class User {
     @Id
     private UUID id;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, unique = true, columnDefinition = "citext")
     private String email;
 
     @Column(name = "password_hash", nullable = false)
     private String passwordHash;
 
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "user_role")
     private String role;
+
+    @Column(name = "display_name", nullable = false)
+    private String displayName;
 
     @Column(name = "department_id")
     private UUID departmentId;
@@ -40,6 +43,9 @@ public class User {
     
     public String getRole() { return role; }
     public void setRole(String role) { this.role = role; }
+
+    public String getDisplayName() { return displayName; }
+    public void setDisplayName(String displayName) { this.displayName = displayName; }
     
     public UUID getDepartmentId() { return departmentId; }
     public void setDepartmentId(UUID departmentId) { this.departmentId = departmentId; }

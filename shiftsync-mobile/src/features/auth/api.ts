@@ -2,7 +2,7 @@
  * src/features/auth/api.ts
  * PURPOSE: Abstract the login network calls away from the components.
  */
-import { apiClient, USE_MOCK_API, setMockUser } from '../../api/client';
+import { apiClient, getUseMockApi, setMockUser } from '../../api/client';
 import { LoginResponse, User } from './types';
 import { jwtDecode } from 'jwt-decode';
 
@@ -35,7 +35,7 @@ export const authApi = {
     const res = await apiClient.auth.login(email, password);
     if (!res.accessToken) throw new Error('Invalid login response');
 
-    if (USE_MOCK_API || res.accessToken === 'mock-jwt-token') {
+    if (getUseMockApi() || res.accessToken === 'mock-jwt-token') {
       return {
         accessToken: res.accessToken,
         refreshToken: res.refreshToken,
@@ -51,7 +51,7 @@ export const authApi = {
   },
 
   refreshSession: async (refreshToken: string): Promise<LoginResponse> => {
-    if (USE_MOCK_API || refreshToken === 'mock-refresh-token') {
+    if (getUseMockApi() || refreshToken === 'mock-refresh-token') {
       throw new Error('Refresh failed');
     }
 

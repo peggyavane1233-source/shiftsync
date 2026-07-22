@@ -8,7 +8,7 @@
  */
 
 import React, { useEffect } from 'react';
-import { View, StyleSheet, Platform, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Stack, router, usePathname } from 'expo-router';
 import { useAuth } from '../../src/features/auth';
 import { Text, Screen, Spinner } from '../../src/components/ui';
@@ -19,25 +19,18 @@ export default function AdminLayout() {
   const { user, isRestoring } = useAuth();
   const pathname = usePathname();
 
-  // GUARD: Enforce platform and role boundaries
+  // GUARD: Enforce role boundaries (admin works on web and mobile for demo)
   useEffect(() => {
     if (isRestoring) return;
-    
-    // Admins must be on web
-    if (Platform.OS !== 'web') {
-      router.replace('/(supervisor)');
-      return;
-    }
 
-    // Workers cannot access admin
     if (user?.role === 'WORKER') {
       router.replace('/(worker)');
       return;
     }
-    
+
     // Only ADMIN or SAFETY should be here
-    if (user && !['ADMIN', 'SAFETY_OFFICER'].includes(user.role)) {
-       router.replace('/(supervisor)');
+    if (user && !['ADMIN', 'SAFETY', 'SAFETY_OFFICER'].includes(user.role)) {
+      router.replace('/(supervisor)');
     }
   }, [user, isRestoring]);
 

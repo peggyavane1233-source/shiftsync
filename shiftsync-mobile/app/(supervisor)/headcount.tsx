@@ -4,7 +4,7 @@ import { RefreshCcw } from 'lucide-react-native';
 import { format, differenceInSeconds } from 'date-fns';
 import { Screen, Text, Button, Spinner, TallyTag, TaskModal } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
-import { apiClient, USE_MOCK_API } from '../../src/api/client';
+import { apiClient, getUseMockApi } from '../../src/api/client';
 import { useStompWebSocket } from '../../src/hooks/useStompWebSocket';
 
 export default function HeadcountScreen() {
@@ -19,6 +19,8 @@ export default function HeadcountScreen() {
   const [selectedWorker, setSelectedWorker] = useState<any>(null);
   const [assigningTaskWorker, setAssigningTaskWorker] = useState<{ id: string, name: string } | null>(null);
   const [connectionError, setConnectionError] = useState(false);
+  const [usersById, setUsersById] = useState<Record<string, any>>({});
+  const [fatigueByUser, setFatigueByUser] = useState<Record<string, any>>({});
 
   const fetchStats = useCallback(async (shiftId: string) => {
     const stats = await apiClient.supervisor.headcount(shiftId);
@@ -36,7 +38,18 @@ export default function HeadcountScreen() {
   useEffect(() => {
     const loadShift = async () => {
       try {
-        const shifts = await apiClient.supervisor.listShifts();
+        const [shifts, users, alerts] = await Promise.all([
+          apiClient.supervisor.listShifts(),
+          apiClient.users.list(),
+          apiClient.supervisor.listFatigueAlerts(),
+        ]);
+        const map: Record<string, any> = {};
+        users.forEach((u: any) => { map[u.id] = u; });
+        setUsersById(map);
+        const fatMap: Record<string, any> = {};
+        alerts.forEach((a: any) => { fatMap[a.userId] = a; });
+        // Also pull scores for assigned workers later via alerts + default
+        setFatigueByUser(fatMap);
         if (shifts.length > 0) {
           setShift(shifts[0]);
           await fetchStats(shifts[0].id);
@@ -52,7 +65,7 @@ export default function HeadcountScreen() {
 
   // Mock: poll. Real: WebSocket.
   useEffect(() => {
-    if (!USE_MOCK_API || !shift) return;
+    if (!getUseMockApi() || !shift) return;
     const interval = setInterval(() => fetchStats(shift.id), 3000);
     return () => clearInterval(interval);
   }, [shift, fetchStats]);
@@ -62,11 +75,11 @@ export default function HeadcountScreen() {
     topic: shift ? `/topic/headcount/${shift.id}` : '',
     onMessage: handleHeadcountUpdate,
     onReconnect: () => shift && fetchStats(shift.id),
-    enabled: !USE_MOCK_API && !!shift,
+    enabled: !getUseMockApi() && !!shift,
   });
 
   useEffect(() => {
-    if (!USE_MOCK_API && shift) setConnectionError(!wsConnected);
+    if (!getUseMockApi() && shift) setConnectionError(!wsConnected);
   }, [wsConnected, shift]);
 
   useEffect(() => {
@@ -121,15 +134,21 @@ export default function HeadcountScreen() {
 
     const isPresent = presentIds.includes(assignment.userId);
     const time = headcount.records.find((r: any) => r.userId === assignment.userId)?.checkInTime;
-    
+    const user = usersById[assignment.userId];
+    const fat = fatigueByUser[assignment.userId];
+    const shiftStart = shift ? new Date(shift.startTime).getTime() : 0;
+    const isLate = !isPresent && Date.now() > shiftStart + 15 * 60000;
+
     return {
       isEmptySlot: false,
       id: assignment.userId,
-      name: `Worker ${assignment.userId.slice(-4)}`,
-      empNo: assignment.userId.slice(0, 5).toUpperCase(),
+      name: user?.displayName || `Worker ${assignment.userId.slice(-4)}`,
+      empNo: user?.employeeNo || assignment.userId.slice(0, 8).toUpperCase(),
       isPresent,
-      isLate: !isPresent && i % 4 === 0, // Mock: some absent workers are flagged as Late
-      time
+      isLate,
+      time,
+      riskLevel: fat?.riskLevel || 'LOW',
+      fatigueScore: fat?.score,
     };
   });
 
@@ -265,14 +284,29 @@ export default function HeadcountScreen() {
 
               <View style={[styles.modalDataRow, { borderBottomColor: theme.rule, marginBottom: spacing.xl }]}>
                 <Text variant="label" style={{ color: theme.shadow }}>FATIGUE RISK</Text>
-                <Text variant="status" style={{ color: selectedWorker.isLate ? theme.warning : theme.safe }}>
-                  {selectedWorker.isLate ? 'WARNING' : 'SAFE'}
+                <Text variant="status" style={{
+                  color: selectedWorker.riskLevel === 'CRITICAL' ? theme.danger
+                    : selectedWorker.riskLevel === 'WARNING' ? theme.warning
+                    : selectedWorker.isLate ? theme.advisory : theme.safe
+                }}>
+                  {selectedWorker.riskLevel || (selectedWorker.isLate ? 'WARNING' : 'SAFE')}
+                  {selectedWorker.fatigueScore != null ? ` ${selectedWorker.fatigueScore}` : ''}
                 </Text>
               </View>
 
               <View style={{ flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md }}>
-                <Button title="CALL" variant="secondary" style={[styles.actionBtn, { flex: 1 }]} onPress={() => {}} />
-                <Button title="SMS" variant="secondary" style={[styles.actionBtn, { flex: 1 }]} onPress={() => {}} />
+                <Button
+                  title="CALL"
+                  variant="secondary"
+                  style={[styles.actionBtn, { flex: 1 }]}
+                  onPress={() => Alert.alert('Call', `Mock call to ${selectedWorker.name}`)}
+                />
+                <Button
+                  title="SMS"
+                  variant="secondary"
+                  style={[styles.actionBtn, { flex: 1 }]}
+                  onPress={() => Alert.alert('SMS', `Mock SMS sent to ${selectedWorker.name}`)}
+                />
               </View>
 
               {!selectedWorker.isPresent && (
@@ -302,7 +336,10 @@ export default function HeadcountScreen() {
         workerId={assigningTaskWorker?.id || ''} 
         workerName={assigningTaskWorker?.name || ''} 
         onClose={() => setAssigningTaskWorker(null)}
-        onSuccess={() => setAssigningTaskWorker(null)}
+        onSuccess={() => {
+          setAssigningTaskWorker(null);
+          Alert.alert('Task assigned', 'Worker will see the critical directive on their home screen.');
+        }}
       />
 
     </Screen>

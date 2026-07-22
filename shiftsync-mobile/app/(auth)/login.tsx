@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, TextInput, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity } from 'react-native';
-import { router } from 'expo-router';
 import { Button, Text, ErrorState } from '../../src/components/ui';
 import { useTheme, spacing, typography } from '../../src/theme';
 import { useAuth } from '../../src/features/auth';
@@ -8,7 +7,7 @@ import { useAuth } from '../../src/features/auth';
 export default function LoginScreen() {
   const theme = useTheme();
   const { login, isLoading } = useAuth();
-  
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -29,8 +28,8 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={{ flex: 1, backgroundColor: theme.seam }} 
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: theme.seam }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
@@ -69,22 +68,21 @@ export default function LoginScreen() {
             editable={!isLoading}
           />
 
-          <Button 
-            title="AUTHENTICATE" 
-            size="lg" 
-            onPress={() => handleLogin()} 
-            loading={isLoading} 
+          <Button
+            title="AUTHENTICATE"
+            size="lg"
+            onPress={() => handleLogin()}
+            loading={isLoading}
             style={{ marginTop: spacing.md }}
           />
         </View>
 
-        {/* DEMO SECTION */}
         <View style={styles.demoSection}>
           <Text variant="label" style={{ color: theme.shadow, marginBottom: spacing.md, textAlign: 'center' }}>
             [ OVERRIDE CODES ]
           </Text>
           <View style={styles.demoButtons}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.demoBtn, { backgroundColor: theme.gangue, borderColor: theme.rule }]}
               onPress={() => handleLogin('ama.boateng@shiftsync.io')}
               disabled={isLoading}
@@ -92,15 +90,15 @@ export default function LoginScreen() {
               <Text variant="label" style={{ color: theme.headlamp }}>WORKER</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.demoBtn, { backgroundColor: theme.gangue, borderColor: theme.rule }]}
               onPress={() => handleLogin('kwame@shiftsync.io')}
               disabled={isLoading}
             >
               <Text variant="label" style={{ color: theme.headlamp }}>SUPERVISOR</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={[styles.demoBtn, { backgroundColor: theme.gangue, borderColor: theme.rule }]}
               onPress={() => handleLogin('admin@shiftsync.io')}
               disabled={isLoading}
@@ -109,7 +107,6 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
         </View>
-
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -127,7 +124,7 @@ const styles = StyleSheet.create({
   },
   statusBlock: {
     width: 48,
-    height: 16, // Industrial block, not a logo
+    height: 16,
   },
   formCard: {
     padding: spacing.xl,
@@ -137,10 +134,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   input: {
-    height: 56, // TAP_MIN compliance
+    height: 56,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
-    fontFamily: typography.fonts.data, // Monospace for technical entry
+    fontFamily: typography.fonts.data,
     fontSize: 18,
     marginBottom: spacing.lg,
   },
@@ -153,12 +150,12 @@ const styles = StyleSheet.create({
   demoButtons: {
     flexDirection: 'row',
     gap: spacing.md,
-    justifyContent: 'center'
+    justifyContent: 'center',
   },
   demoBtn: {
     flex: 1,
     padding: spacing.md,
     borderWidth: 1,
     alignItems: 'center',
-  }
+  },
 });

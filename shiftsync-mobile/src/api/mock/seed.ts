@@ -326,6 +326,16 @@ export const generateSeedData = () => {
     swapRequests,
     musters,
     musterResponses,
-    certAssignments
+    certAssignments,
+    tasks: [
+      {
+        id: makeId('tsk', 1),
+        title: 'REPORT TO ROLL CALL POINT',
+        assignedUserId: workers[1]!.id,
+        assignedByUserId: users[0]!.id,
+        status: 'PENDING',
+        createdAt: new Date().toISOString(),
+      },
+    ],
   };
 };

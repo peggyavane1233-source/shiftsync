@@ -83,7 +83,7 @@ Get-Content '$envFile' | ForEach-Object {
 }
 Set-Location '$svcDir'
 Write-Host '=== $title ==='
-& '$Mvn' spring-boot:run
+& '$Mvn' -q "-Dmaven.test.skip=true" spring-boot:run
 "@
   Start-Process powershell -ArgumentList "-NoExit", "-Command", $cmd -WindowStyle Normal
   Start-Sleep -Seconds 2

@@ -109,6 +109,35 @@ export const mockHandlers = {
       assign.assignedAt = new Date().toISOString();
       return { success: true };
     },
+    rejectSwap: async (assignmentId: string) => {
+      await simulateNetwork();
+      const assign = db.data.assignments.find(a => a.id === assignmentId);
+      if (!assign) throw createError('NOT_FOUND', 'Assignment not found');
+      const swapReq = db.data.swapRequests.find(s => s.shiftId === assign.shiftId && s.requesterId === assign.userId && s.status === 'PENDING');
+      if (swapReq) swapReq.status = 'REJECTED';
+      assign.status = 'CONFIRMED';
+      return { success: true };
+    },
+    listAll: async () => {
+      await simulateNetwork();
+      return db.data.shifts.map(shift => ({
+        ...shift,
+        assignments: db.getAssignmentsForShift(shift.id),
+        attendance: db.data.attendanceRecords.filter(a => a.shiftId === shift.id),
+      }));
+    },
+    publishDrafts: async () => {
+      await simulateNetwork();
+      let count = 0;
+      db.data.shifts.forEach((s: any) => {
+        if (s.status === 'DRAFT') {
+          s.status = 'PUBLISHED';
+          s.publishedAt = new Date().toISOString();
+          count += 1;
+        }
+      });
+      return { published: count };
+    },
     unassign: async (assignmentId: string) => {
       await simulateNetwork();
       const idx = db.data.assignments.findIndex(a => a.id === assignmentId);
@@ -138,7 +167,7 @@ export const mockHandlers = {
         return !hasConflict;
       });
     },
-    create: async (shiftData: { departmentId: string, startTime: string, endTime: string, shiftType: 'DAY' | 'NIGHT', requiredWorkers: number }, userId: string) => {
+    create: async (shiftData: { departmentId: string, startTime: string, endTime: string, shiftType: 'DAY' | 'NIGHT', requiredWorkers: number, status?: string }, userId: string) => {
       await simulateNetwork();
       const newShift = {
         id: uuid.v4() as string,
@@ -147,9 +176,9 @@ export const mockHandlers = {
         endTime: shiftData.endTime,
         shiftType: shiftData.shiftType,
         requiredWorkers: shiftData.requiredWorkers,
-        status: 'PUBLISHED',
+        status: shiftData.status || 'PUBLISHED',
         createdBy: userId,
-        publishedAt: new Date().toISOString()
+        publishedAt: (shiftData.status || 'PUBLISHED') === 'PUBLISHED' ? new Date().toISOString() : null
       };
       // @ts-ignore
       db.data.shifts.push(newShift);
@@ -185,12 +214,18 @@ export const mockHandlers = {
           }
         }
         
-        // Certification Check
+        // Certification Check — only block if worker truly lacks required cert
         if (shift.requiredCertId) {
-          // For mock, assume missing cert randomly if they try to assign
-          throw createError('CERT_MISSING', 'Worker lacks the required certification');
+          const certs = db.getUserCerts(userId);
+          const hasCert = certs.some((c: any) => c.id === shift.requiredCertId || c.name === shift.requiredCertId);
+          if (!hasCert && certs.length === 0) {
+            throw createError('CERT_MISSING', 'Worker lacks the required certification');
+          }
         }
-        
+
+        // Skip if already assigned
+        if (db.getAssignment(userId, shiftId)) continue;
+
         // Add Assignment
         db.data.assignments.push({
           id: uuid.v4() as string,
@@ -466,6 +501,27 @@ export const mockHandlers = {
       // Keep CRITICAL score for audit/display, but check-in is allowed via hasOverride
       return { success: true, userId, riskLevel: score.riskLevel, score: score.score };
     },
+    requestOverride: async (userId: string) => {
+      await simulateNetwork();
+      const score = db.getFatigueScore(userId);
+      const user = db.getUser(userId);
+      // Notify department supervisors
+      const supervisors = db.data.users.filter(
+        u => u.role === 'SUPERVISOR' && u.departmentId === user?.departmentId
+      );
+      supervisors.forEach(sup => {
+        db.data.notifications.push({
+          id: uuid.v4() as string,
+          userId: sup.id,
+          type: 'FATIGUE_OVERRIDE_REQUEST',
+          channel: 'PUSH',
+          title: 'Fatigue override requested',
+          message: `${user?.displayName || 'A worker'} requested approval to start shift (score ${score?.score ?? '?'}).`,
+          sentAt: new Date().toISOString(),
+        } as any);
+      });
+      return { success: true, notified: supervisors.length };
+    },
     heatmap: async () => {
       await simulateNetwork();
       const dayLabels = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -509,12 +565,16 @@ export const mockHandlers = {
   muster: {
     initiate: async (zone: string, userId: string) => {
       await simulateNetwork();
+      const dept = db.data.departments.find(d => d.mineZone === zone || d.id === zone || d.name.includes(zone));
+      const expected = dept
+        ? db.data.users.filter(u => u.role === 'WORKER' && u.departmentId === dept.id).length
+        : db.data.users.filter(u => u.role === 'WORKER').length;
       const newMuster = {
         id: uuid.v4() as string,
         initiatedBy: userId,
-        zone,
+        zone: dept?.mineZone || zone,
         initiatedAt: new Date().toISOString(),
-        expectedWorkers: 50, // Mock number
+        expectedWorkers: Math.max(1, expected),
         accountedWorkers: 0,
       };
       db.data.musters.push(newMuster);
@@ -592,20 +652,86 @@ export const mockHandlers = {
         status: 'PENDING',
         createdAt: new Date().toISOString()
       };
-      // Use a runtime extension for the mock DB to avoid strict type edits
       (db.data as any).tasks = (db.data as any).tasks || [];
       (db.data as any).tasks.push(newTask);
+      // Also notify the worker
+      db.data.notifications.push({
+        id: uuid.v4() as string,
+        userId: req.assignedUserId,
+        type: 'TASK_ASSIGNED',
+        channel: 'PUSH',
+        title: 'Critical directive',
+        message: req.title,
+        sentAt: new Date().toISOString(),
+      } as any);
       return newTask;
     },
     mine: async (userId: string) => {
       await simulateNetwork();
-      return ((db.data as any).tasks || []).filter((t: any) => t.assignedUserId === userId && t.status !== 'COMPLETED');
+      const tasks = (db.data as any).tasks || [];
+      return tasks.filter((t: any) => t.assignedUserId === userId && t.status !== 'COMPLETED');
     },
     acknowledge: async (taskId: string) => {
       await simulateNetwork();
-      const t = ((db.data as any).tasks || []).find((t: any) => t.id === taskId);
+      const tasks = (db.data as any).tasks || [];
+      const t = tasks.find((t: any) => t.id === taskId);
       if (t) t.status = 'ACKNOWLEDGED';
       return t;
     }
+  },
+  admin: {
+    zoneSummary: async () => {
+      await simulateNetwork();
+      const criticalAlerts = db.data.fatigueScores.filter(
+        f => f.riskLevel === 'CRITICAL' && !db.hasOverride(f.userId)
+      );
+      return db.data.departments.map(dept => {
+        const workers = db.data.users.filter(u => u.role === 'WORKER' && u.departmentId === dept.id);
+        const workerIds = new Set(workers.map(w => w.id));
+        const present = db.data.attendanceRecords.filter(
+          a => workerIds.has(a.userId) && !a.checkOutTime
+        ).length;
+        const criticalFatigue = criticalAlerts.filter(a => workerIds.has(a.userId)).length;
+        const musterActive = db.data.musters.some(m => !m.closedAt && m.zone === dept.mineZone);
+        const total = workers.length;
+        return {
+          id: dept.id,
+          name: dept.name.toUpperCase(),
+          mineZone: dept.mineZone,
+          total,
+          present,
+          unaccounted: Math.max(0, total - present),
+          criticalFatigue,
+          musterActive,
+        };
+      });
+    },
+    reports: async () => {
+      await simulateNetwork();
+      const attendance = db.data.attendanceRecords.length;
+      const overtime = db.data.attendanceRecords.filter(a => {
+        if (!a.checkOutTime || !a.checkInTime) return false;
+        const hrs = (new Date(a.checkOutTime).getTime() - new Date(a.checkInTime).getTime()) / 3600000;
+        return hrs > 10;
+      }).length;
+      const critical = db.data.fatigueScores.filter(f => f.riskLevel === 'CRITICAL').length;
+      const warning = db.data.fatigueScores.filter(f => f.riskLevel === 'WARNING').length;
+      const byWorker = db.data.users.filter(u => u.role === 'WORKER').slice(0, 10).map(u => {
+        const f = db.getFatigueScore(u.id);
+        const records = db.data.attendanceRecords.filter(a => a.userId === u.id);
+        return {
+          workerName: u.displayName,
+          employeeNo: u.employeeNo,
+          shifts: records.length,
+          fatigueScore: f?.score ?? 0,
+          riskLevel: f?.riskLevel ?? 'LOW',
+        };
+      });
+      return {
+        generatedAt: new Date().toISOString(),
+        summary: { attendance, overtime, critical, warning },
+        byWorker,
+      };
+    },
   }
 };

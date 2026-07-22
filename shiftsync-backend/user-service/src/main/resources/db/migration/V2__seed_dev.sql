@@ -1,38 +1,50 @@
 -- V2__seed_dev.sql
+-- Same deterministic UUIDs as docs/supabase/V2__seed_dev.sql
 
--- Departments
-INSERT INTO departments (id, name, mine_zone) VALUES 
-('dept-0000-0000-0000-000000000001', 'Underground Zone 1', 'UG-Z1'),
-('dept-0000-0000-0000-000000000002', 'Underground Zone 2', 'UG-Z2'),
-('dept-0000-0000-0000-000000000003', 'Surface Processing', 'SURF');
+INSERT INTO sites (id, name) VALUES
+('a0000000-0000-4000-8000-000000000001', 'Obuasi Mine')
+ON CONFLICT (id) DO NOTHING;
 
--- Supervisors
-INSERT INTO user_profiles (id, display_name, role, department_id, employee_no) VALUES 
-('usr-sup-0000-0000-0000-000000000001', 'Kwame Mensah', 'SUPERVISOR', 'dept-0000-0000-0000-000000000001', 'SUP-100'),
-('usr-sup-0000-0000-0000-000000000002', 'Akua Osei', 'SUPERVISOR', 'dept-0000-0000-0000-000000000002', 'SUP-101'),
-('usr-sup-0000-0000-0000-000000000003', 'Yaw Appiah', 'SUPERVISOR', 'dept-0000-0000-0000-000000000003', 'SUP-102');
+-- departments (id, site_id, name)
+INSERT INTO departments (id, site_id, name) VALUES
+('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'Underground Zone 1'),
+('b0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'Underground Zone 2'),
+('b0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000001', 'Surface Processing')
+ON CONFLICT (id) DO NOTHING;
 
-UPDATE departments SET supervisor_id = 'usr-sup-0000-0000-0000-000000000001' WHERE id = 'dept-0000-0000-0000-000000000001';
-UPDATE departments SET supervisor_id = 'usr-sup-0000-0000-0000-000000000002' WHERE id = 'dept-0000-0000-0000-000000000002';
-UPDATE departments SET supervisor_id = 'usr-sup-0000-0000-0000-000000000003' WHERE id = 'dept-0000-0000-0000-000000000003';
+UPDATE departments SET mine_zone = 'UG-Z1' WHERE id = 'b0000000-0000-4000-8000-000000000001';
+UPDATE departments SET mine_zone = 'UG-Z2' WHERE id = 'b0000000-0000-4000-8000-000000000002';
+UPDATE departments SET mine_zone = 'SURF'  WHERE id = 'b0000000-0000-4000-8000-000000000003';
 
--- Admin & Safety
-INSERT INTO user_profiles (id, display_name, role, employee_no) VALUES 
-('usr-adm-0000-0000-0000-000000000001', 'Afiya Baah', 'ADMIN', 'ADM-001'),
-('usr-saf-0000-0000-0000-000000000001', 'Kofi Owusu', 'SAFETY', 'SAF-001');
+INSERT INTO user_profiles (id, display_name, role, department_id, employee_no) VALUES
+('d1000000-0000-4000-8000-000000000001', 'Kwame Mensah', 'SUPERVISOR', 'b0000000-0000-4000-8000-000000000001', 'SUP-100'),
+('d1000000-0000-4000-8000-000000000002', 'Akua Osei', 'SUPERVISOR', 'b0000000-0000-4000-8000-000000000002', 'SUP-101'),
+('d1000000-0000-4000-8000-000000000003', 'Yaw Appiah', 'SUPERVISOR', 'b0000000-0000-4000-8000-000000000003', 'SUP-102')
+ON CONFLICT (id) DO NOTHING;
 
--- Workers
-INSERT INTO user_profiles (id, display_name, role, department_id, employee_no) VALUES 
-('usr-wrk-0000-0000-0000-000000000001', 'Ama Boateng', 'WORKER', 'dept-0000-0000-0000-000000000002', 'WRK-1000'),
-('usr-wrk-0000-0000-0000-000000000002', 'Kwadwo Asare', 'WORKER', 'dept-0000-0000-0000-000000000003', 'WRK-1001'),
-('usr-wrk-0000-0000-0000-000000000003', 'Abena Pokua', 'WORKER', 'dept-0000-0000-0000-000000000001', 'WRK-1002'),
-('usr-wrk-0000-0000-0000-000000000004', 'Kwabena Frimpong', 'WORKER', 'dept-0000-0000-0000-000000000002', 'WRK-1003'),
-('usr-wrk-0000-0000-0000-000000000005', 'Yaa Asantewaa', 'WORKER', 'dept-0000-0000-0000-000000000003', 'WRK-1004');
+UPDATE departments SET supervisor_id = 'd1000000-0000-4000-8000-000000000001' WHERE id = 'b0000000-0000-4000-8000-000000000001';
+UPDATE departments SET supervisor_id = 'd1000000-0000-4000-8000-000000000002' WHERE id = 'b0000000-0000-4000-8000-000000000002';
+UPDATE departments SET supervisor_id = 'd1000000-0000-4000-8000-000000000003' WHERE id = 'b0000000-0000-4000-8000-000000000003';
 
--- Certifications
-INSERT INTO certifications (id, name, description, expiry_days) VALUES
-('cert-0000-0000-0000-000000000001', 'Underground Blasting', 'Blasting operations safety', 365),
-('cert-0000-0000-0000-000000000002', 'First Aid L2', 'Basic life support', 730);
+INSERT INTO user_profiles (id, display_name, role, employee_no) VALUES
+('d2000000-0000-4000-8000-000000000001', 'Afiya Baah', 'ADMIN', 'ADM-001'),
+('d3000000-0000-4000-8000-000000000001', 'Kofi Owusu', 'SAFETY', 'SAF-001')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO user_profiles (id, display_name, role, department_id, employee_no) VALUES
+('d4000000-0000-4000-8000-000000000001', 'Ama Boateng', 'WORKER', 'b0000000-0000-4000-8000-000000000002', 'WRK-1000'),
+('d4000000-0000-4000-8000-000000000002', 'Kwadwo Asare', 'WORKER', 'b0000000-0000-4000-8000-000000000003', 'WRK-1001'),
+('d4000000-0000-4000-8000-000000000003', 'Abena Pokua', 'WORKER', 'b0000000-0000-4000-8000-000000000001', 'WRK-1002'),
+('d4000000-0000-4000-8000-000000000004', 'Kwabena Frimpong', 'WORKER', 'b0000000-0000-4000-8000-000000000002', 'WRK-1003'),
+('d4000000-0000-4000-8000-000000000005', 'Yaa Asantewaa', 'WORKER', 'b0000000-0000-4000-8000-000000000003', 'WRK-1004')
+ON CONFLICT (id) DO NOTHING;
+
+-- certifications (id, site_id, name, description, expiry_days)
+INSERT INTO certifications (id, site_id, name, description, expiry_days) VALUES
+('c0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000001', 'Underground Blasting', 'Blasting operations safety', 365),
+('c0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000001', 'First Aid L2', 'Basic life support', 730)
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO user_certifications (user_id, cert_id, issued_at, expires_at) VALUES
-('usr-wrk-0000-0000-0000-000000000003', 'cert-0000-0000-0000-000000000001', CURRENT_DATE - interval '100 days', CURRENT_DATE + interval '265 days');
+('d4000000-0000-4000-8000-000000000003', 'c0000000-0000-4000-8000-000000000001', CURRENT_DATE - interval '100 days', CURRENT_DATE + interval '265 days')
+ON CONFLICT (user_id, cert_id) DO NOTHING;

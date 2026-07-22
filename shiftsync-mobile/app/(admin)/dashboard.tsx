@@ -1,42 +1,54 @@
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { Screen, Text, Card, Spinner } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { apiClient } from '../../src/api/client';
 
-// Mock data representing the 3 main operational zones of the mine
-const ZONES_MOCK = [
-  { id: 'Z1', name: 'ZONE 1 (UPPER)', unaccounted: 0, criticalFatigue: 0, musterActive: false, total: 42, present: 42 },
-  { id: 'Z2', name: 'ZONE 2 (DEEP)', unaccounted: 2, criticalFatigue: 1, musterActive: true, total: 52, present: 50 },
-  { id: 'Z3', name: 'SURFACE MILL', unaccounted: 0, criticalFatigue: 0, musterActive: false, total: 18, present: 18 },
-];
-
 export default function AdminDashboard() {
   const theme = useTheme();
   const [loading, setLoading] = useState(true);
-  const [zones, setZones] = useState(ZONES_MOCK);
+  const [zones, setZones] = useState<any[]>([]);
   const [now, setNow] = useState(new Date());
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    // In a real app, we would fetch aggregation from apiClient.supervisor.listShifts() 
-    // mapped to each zone. For the mimic panel demo, we just use the mock data.
-    setTimeout(() => setLoading(false), 500);
+  const load = async () => {
+    try {
+      const data = await apiClient.admin.zoneSummary();
+      setZones(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
+  useFocusEffect(useCallback(() => {
+    load();
     const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+    const poll = setInterval(load, 8000);
+    return () => {
+      clearInterval(timer);
+      clearInterval(poll);
+    };
+  }, []));
 
   if (loading) return <Screen style={styles.center}><Spinner /></Screen>;
 
-  // SORTING LOGIC: Trouble comes first
   const sortedZones = [...zones].sort((a, b) => {
     const aTrouble = (a.unaccounted > 0 || a.criticalFatigue > 0 || a.musterActive) ? 1 : 0;
     const bTrouble = (b.unaccounted > 0 || b.criticalFatigue > 0 || b.musterActive) ? 1 : 0;
-    return bTrouble - aTrouble; // Descending (trouble first)
+    return bTrouble - aTrouble;
   });
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView
+      contentContainerStyle={styles.container}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />
+      }
+    >
       <View style={styles.header}>
         <Text variant="display" weight="bold" style={{ textTransform: 'uppercase', letterSpacing: 2, color: theme.headlamp }}>
           SITE MIMIC PANEL
@@ -45,17 +57,17 @@ export default function AdminDashboard() {
           {now.toLocaleTimeString('en-GB')}
         </Text>
       </View>
-      
+
       <View style={styles.grid}>
         {sortedZones.map((zone) => {
           const hasTrouble = zone.unaccounted > 0 || zone.criticalFatigue > 0 || zone.musterActive;
 
           return (
-            <Card 
-              key={zone.id} 
+            <Card
+              key={zone.id}
               style={[
-                styles.zoneCard, 
-                hasTrouble && { borderColor: theme.danger, borderWidth: 1 }
+                styles.zoneCard,
+                hasTrouble && { borderColor: theme.danger, borderWidth: 1 },
               ]}
             >
               <View style={[styles.zoneHeader, { borderBottomColor: theme.rule }]}>
@@ -78,10 +90,23 @@ export default function AdminDashboard() {
                 </View>
 
                 <View style={styles.metric}>
-                  <Text variant="hero" style={{ fontSize: 64, color: zone.unaccounted > 0 ? theme.danger : theme.dust, fontVariant: ['tabular-nums'] }}>
+                  <Text
+                    variant="hero"
+                    style={{
+                      fontSize: 64,
+                      color: zone.unaccounted > 0 ? theme.danger : theme.dust,
+                      fontVariant: ['tabular-nums'],
+                    }}
+                  >
                     {zone.unaccounted}
                   </Text>
-                  <Text variant="label" style={{ color: zone.unaccounted > 0 ? theme.danger : theme.shadow, marginTop: spacing.xs }}>
+                  <Text
+                    variant="label"
+                    style={{
+                      color: zone.unaccounted > 0 ? theme.danger : theme.shadow,
+                      marginTop: spacing.xs,
+                    }}
+                  >
                     {zone.unaccounted > 0 ? '● MISSING' : '● ACCOUNTED'}
                   </Text>
                 </View>
@@ -89,7 +114,14 @@ export default function AdminDashboard() {
 
               <View style={[styles.fatigueRow, { borderTopColor: theme.rule }]}>
                 <Text variant="label" style={{ color: theme.dust }}>CRITICAL FATIGUE BLOCKS</Text>
-                <Text variant="display" weight="bold" style={{ color: zone.criticalFatigue > 0 ? theme.danger : theme.safe, fontVariant: ['tabular-nums'] }}>
+                <Text
+                  variant="display"
+                  weight="bold"
+                  style={{
+                    color: zone.criticalFatigue > 0 ? theme.danger : theme.safe,
+                    fontVariant: ['tabular-nums'],
+                  }}
+                >
                   {zone.criticalFatigue}
                 </Text>
               </View>
@@ -103,23 +135,23 @@ export default function AdminDashboard() {
 
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  container: { flex: 1, paddingBottom: spacing.xxl },
+  container: { flexGrow: 1, paddingBottom: spacing.xxl },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.xxl,
   },
-  grid: { 
-    flexDirection: 'row', 
+  grid: {
+    flexDirection: 'row',
     gap: spacing.xl,
     flexWrap: 'wrap',
   },
-  zoneCard: { 
-    flex: 1, 
+  zoneCard: {
+    flex: 1,
     minWidth: 320,
     borderWidth: 1,
-    borderColor: 'transparent'
+    borderColor: 'transparent',
   },
   zoneHeader: {
     flexDirection: 'row',
@@ -148,5 +180,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: spacing.md,
     borderTopWidth: 1,
-  }
+  },
 });

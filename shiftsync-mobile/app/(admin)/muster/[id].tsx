@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, FlatList, LayoutAnimation, UIManager, Platform } from 'react-native';
 import { Screen, Text, Card, Spinner, TallyTag } from '../../../src/components/ui';
 import { spacing, useTheme } from '../../../src/theme';
-import { apiClient, USE_MOCK_API } from '../../../src/api/client';
+import { apiClient, getUseMockApi } from '../../../src/api/client';
 import { useLocalSearchParams } from 'expo-router';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useStompWebSocket } from '../../../src/hooks/useStompWebSocket';
@@ -42,11 +42,11 @@ export default function AdminMusterView() {
     topic: id ? `/topic/musters/${id}` : '',
     onMessage: handleMusterUpdate,
     onReconnect: fetchStatus,
-    enabled: !USE_MOCK_API && !!id,
+    enabled: !getUseMockApi() && !!id,
   });
 
   useEffect(() => {
-    if (!USE_MOCK_API && id && status) setConnectionError(!wsConnected);
+    if (!getUseMockApi() && id && status) setConnectionError(!wsConnected);
   }, [wsConnected, id, status]);
 
   useEffect(() => {
@@ -58,7 +58,7 @@ export default function AdminMusterView() {
   }, [id, fetchStatus]);
 
   useEffect(() => {
-    if (!USE_MOCK_API || !id) return;
+    if (!getUseMockApi() || !id) return;
     const interval = setInterval(() => fetchStatus().catch(() => {}), 2000);
     return () => clearInterval(interval);
   }, [id, fetchStatus]);

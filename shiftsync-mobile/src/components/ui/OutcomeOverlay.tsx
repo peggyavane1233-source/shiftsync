@@ -4,7 +4,7 @@
  * WHY: Must be readable from 3 meters away in under 1 second.
  */
 import React, { useEffect } from 'react';
-import { View, StyleSheet, Pressable } from 'react-native';
+import { View, StyleSheet, Pressable, Alert } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { CheckCircle2, AlertTriangle, AlertCircle, XCircle } from 'lucide-react-native';
 import { useTheme, spacing } from '../../theme';
@@ -13,6 +13,7 @@ import { Button } from './Button';
 import { TallyTag } from './TallyTag';
 import { useAuth } from '../../features/auth';
 import { router } from 'expo-router';
+import { apiClient } from '../../api/client';
 
 export type OutcomeState = 'SUCCESS' | 'QUEUED' | 'EXPIRED' | 'BLOCKED' | 'NOT_ROSTERED' | 'NONE';
 
@@ -92,7 +93,20 @@ export function OutcomeOverlay({ outcome, onDismiss }: OutcomeOverlayProps) {
           <Text variant="bodyLg" style={{ color: '#000000', textAlign: 'center', marginBottom: spacing.xxl }}>
             Fatigue risk CRITICAL. You cannot start this shift without supervisor approval.
           </Text>
-          <Button title="REQUEST APPROVAL" variant="secondary" size="lg" onPress={() => router.back()} />
+          <Button
+            title="REQUEST APPROVAL"
+            variant="secondary"
+            size="lg"
+            onPress={async () => {
+              try {
+                const res = await apiClient.fatigue.requestOverride();
+                Alert.alert('Request sent', `Notified ${res.notified ?? 0} supervisor(s).`);
+                router.back();
+              } catch (e: any) {
+                Alert.alert('Error', e?.message || 'Failed to request override');
+              }
+            }}
+          />
         </View>
       )
     },

@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, router } from 'expo-router';
 import { Screen, Text, Card, Button } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { useAuth } from '../../src/features/auth';
@@ -95,11 +95,19 @@ export default function ProfileScreen() {
         </Card>
 
         <Button 
+          title="Attendance History" 
+          variant="secondary"
+          size="lg"
+          onPress={() => router.push('/(worker)/attendance-history')}
+          style={{ marginTop: spacing.lg }}
+        />
+
+        <Button 
           title="Sign Out" 
           variant="secondary"
           size="lg"
           onPress={logout}
-          style={{ marginTop: spacing.xl, borderColor: theme.critical }}
+          style={{ marginTop: spacing.md, borderColor: theme.critical }}
         />
       </ScrollView>
     </Screen>

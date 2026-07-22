@@ -10,6 +10,6 @@ import java.util.UUID;
 
 public interface LoginAttemptRepository extends JpaRepository<LoginAttempt, UUID> {
     
-    @Query("SELECT COUNT(l) FROM LoginAttempt l WHERE l.ipAddress = :ipAddress AND l.success = false AND l.attempted_at >= :since")
+    @Query("SELECT COUNT(l) FROM LoginAttempt l WHERE l.ipAddress = :ipAddress AND l.success = false AND l.attemptedAt >= :since")
     long countFailedAttemptsSince(@Param("ipAddress") String ipAddress, @Param("since") Instant since);
 }

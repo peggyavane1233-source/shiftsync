@@ -1,18 +1,16 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { View, StyleSheet, SectionList, RefreshControl, TouchableOpacity } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, StyleSheet, SectionList, RefreshControl, TouchableOpacity, Alert, Platform } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { Screen, Text, Card, Button, StatusPill, SyncBadge, TallyTag } from '../../src/components/ui';
+import { Screen, Text, Button } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { fetchRoster, RosterResponse } from '../../src/features/roster/api';
 import { apiClient } from '../../src/api/client';
 import { ShiftWithAssignment, Task } from '../../src/api/types';
 import { format, parseISO, addDays, startOfDay, isSameDay } from 'date-fns';
-import { useAuth } from '../../src/features/auth';
 import { useCountdown } from '../../src/hooks/useCountdown';
 
 export default function WorkerDashboard() {
   const theme = useTheme();
-  const { user } = useAuth();
   const [data, setData] = useState<RosterResponse | null>(null);
   const [fatigue, setFatigue] = useState<any>(null);
   const [pendingTasks, setPendingTasks] = useState<Task[]>([]);
@@ -205,21 +203,44 @@ function HeroZone({ shift, fatigue, theme }: { shift: ShiftWithAssignment, fatig
   
   const isCritical = fatigue?.riskLevel === 'CRITICAL';
   const isWarning = fatigue?.riskLevel === 'WARNING';
-  
-  const handleCheckIn = () => {
-    router.push({ pathname: '/scanner', params: { shiftId: shift.id, type: 'checkin' }});
+  const hasOverride = !!fatigue?.hasOverride;
+  const [requesting, setRequesting] = useState(false);
+
+  const handleCheckIn = (method: 'QR' | 'GPS') => {
+    if (method === 'GPS') {
+      router.push({ pathname: '/checkin', params: { shiftId: shift.id, type: state === 'live' ? 'checkout' : 'checkin' } });
+    } else {
+      router.push({
+        pathname: '/scanner',
+        params: { shiftId: shift.id, type: state === 'live' ? 'checkout' : 'checkin' },
+      });
+    }
+  };
+
+  const handleRequestOverride = async () => {
+    setRequesting(true);
+    try {
+      const res = await apiClient.fatigue.requestOverride();
+      Alert.alert(
+        'Request sent',
+        `Notified ${res.notified ?? 0} supervisor(s). You can check in once they override.`
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to request override.');
+    } finally {
+      setRequesting(false);
+    }
   };
 
   return (
     <View style={styles.heroZone}>
       <Text variant="status" style={{ color: theme.headlamp, marginBottom: 4 }}>{shift.shiftType}</Text>
-      <Text variant="bodyLg" style={{ color: theme.dust, marginBottom: spacing.xl }}>Underground Zone A</Text>
+      <Text variant="bodyLg" style={{ color: theme.dust, marginBottom: spacing.xl }}>Your next assignment</Text>
 
       <Text variant="hero" style={{ color: theme.headlamp, marginBottom: spacing.lg }}>
         {startStr} — {endStr}
       </Text>
 
-      {/* THE TICKING CLOCK */}
       <View style={[styles.timerBox, { borderColor: theme.rule }]}>
         <Text variant="data" style={{ color: theme.dust, marginRight: spacing.sm }}>
           {state === 'live' ? '⏱ ELAPSED' : '⏱ STARTS IN'}
@@ -229,31 +250,61 @@ function HeroZone({ shift, fatigue, theme }: { shift: ShiftWithAssignment, fatig
         </Text>
       </View>
 
-      {/* FATIGUE BLOCKER */}
       {isWarning && !isCritical && (
-        <View style={[styles.fatigueBar, { backgroundColor: theme.warning }]}>
+        <TouchableOpacity
+          style={[styles.fatigueBar, { backgroundColor: theme.warning }]}
+          onPress={() => router.push('/(worker)/fatigue')}
+        >
           <Text variant="label" style={{ color: '#000000' }}>⚠ WARNING — {fatigue.score} SCORE</Text>
           <Text variant="body" style={{ color: '#000000', textDecorationLine: 'underline' }}>See why</Text>
+        </TouchableOpacity>
+      )}
+
+      {isCritical && !hasOverride ? (
+        <View style={[styles.fatigueBar, { backgroundColor: theme.danger, minHeight: 120, justifyContent: 'center', flexDirection: 'column' }]}>
+          <Text variant="display" weight="bold" style={{ color: '#000000', textAlign: 'center' }}>⛔ CHECK-IN BLOCKED</Text>
+          <Text variant="label" style={{ color: '#000000', textAlign: 'center', marginTop: spacing.xs }}>FATIGUE RISK CRITICAL</Text>
+          <Button
+            title="REQUEST SUPERVISOR OVERRIDE"
+            variant="secondary"
+            style={{ marginTop: spacing.md }}
+            loading={requesting}
+            onPress={handleRequestOverride}
+          />
+          <Button
+            title="SEE FATIGUE DETAILS"
+            variant="ghost"
+            style={{ marginTop: spacing.sm }}
+            onPress={() => router.push('/(worker)/fatigue')}
+          />
+        </View>
+      ) : (
+        <View style={{ gap: spacing.sm }}>
+          {hasOverride && isCritical && (
+            <Text variant="label" style={{ color: theme.warning, textAlign: 'center', marginBottom: spacing.xs }}>
+              OVERRIDE ACTIVE — CHECK-IN ALLOWED
+            </Text>
+          )}
+          <Button
+            title={state === 'live' ? 'END SHIFT (QR)' : 'START SHIFT (QR)'}
+            variant={state === 'live' ? 'secondary' : 'primary'}
+            style={styles.heroAction}
+            disabled={state === 'future'}
+            onPress={() => handleCheckIn('QR')}
+          />
+          {Platform.OS !== 'web' && (
+            <Button
+              title={state === 'live' ? 'END SHIFT (GPS)' : 'START SHIFT (GPS)'}
+              variant="secondary"
+              style={styles.heroAction}
+              disabled={state === 'future'}
+              onPress={() => handleCheckIn('GPS')}
+            />
+          )}
         </View>
       )}
 
-      {isCritical ? (
-        <View style={[styles.fatigueBar, { backgroundColor: theme.danger, height: 120, justifyContent: 'center' }]}>
-          <Text variant="display" weight="bold" style={{ color: '#000000', textAlign: 'center' }}>⛔ CHECK-IN BLOCKED</Text>
-          <Text variant="label" style={{ color: '#000000', textAlign: 'center', marginTop: spacing.xs }}>FATIGUE RISK CRITICAL</Text>
-          <Button title="REQUEST SUPERVISOR OVERRIDE" variant="secondary" style={{ marginTop: spacing.md }} />
-        </View>
-      ) : (
-        <Button 
-          title={state === 'live' ? 'END SHIFT' : 'START SHIFT'} 
-          variant={state === 'live' ? 'secondary' : 'primary'}
-          style={styles.heroAction}
-          disabled={state === 'future'}
-          onPress={handleCheckIn}
-        />
-      )}
-      
-      {state === 'future' && !isCritical && (
+      {state === 'future' && !(isCritical && !hasOverride) && (
         <Text variant="data" style={{ color: theme.dust, textAlign: 'center', marginTop: spacing.sm }}>
           OPENS AT {format(new Date(start.getTime() - 30 * 60000), 'HH:mm')}
         </Text>

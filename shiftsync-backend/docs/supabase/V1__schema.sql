@@ -1,4 +1,6 @@
--- V1__init.sql — shared Postgres / Supabase safe (IF NOT EXISTS)
+-- ShiftSync V1 schema for Supabase SQL editor
+-- Safe to re-run: uses IF NOT EXISTS / duplicate_object guards.
+-- No PostGIS (underground live GIS disabled).
 
 CREATE EXTENSION IF NOT EXISTS citext;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -22,6 +24,13 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE TYPE risk_level AS ENUM ('LOW','ADVISORY','WARNING','CRITICAL');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+DO $$ BEGIN CREATE TYPE muster_status AS ENUM ('ACTIVE','CLOSED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN CREATE TYPE response_status AS ENUM ('UNACCOUNTED','PRESENT');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- Auth / identity
 CREATE TABLE IF NOT EXISTS users (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email           CITEXT UNIQUE NOT NULL,
@@ -36,6 +45,28 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash      TEXT NOT NULL,
+  family_id       UUID NOT NULL,
+  expires_at      TIMESTAMPTZ NOT NULL,
+  issued_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  revoked_at      TIMESTAMPTZ,
+  replaced_by     UUID
+);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_family ON refresh_tokens (family_id);
+
+CREATE TABLE IF NOT EXISTS login_attempts (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ip_address      VARCHAR(45) NOT NULL,
+  email           CITEXT NOT NULL,
+  success         BOOLEAN NOT NULL,
+  attempted_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_time ON login_attempts (ip_address, attempted_at);
+
+-- Org
 CREATE TABLE IF NOT EXISTS sites (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name       VARCHAR(120) NOT NULL,
@@ -52,7 +83,7 @@ CREATE TABLE IF NOT EXISTS departments (
 );
 
 DO $$ BEGIN
-  ALTER TABLE users ADD CONSTRAINT fk_department FOREIGN KEY (department_id) REFERENCES departments(id);
+  ALTER TABLE users ADD CONSTRAINT fk_users_department FOREIGN KEY (department_id) REFERENCES departments(id);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 CREATE TABLE IF NOT EXISTS certifications (
@@ -73,6 +104,17 @@ CREATE TABLE IF NOT EXISTS user_certifications (
   UNIQUE (user_id, cert_id)
 );
 
+CREATE TABLE IF NOT EXISTS user_devices (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  device_id     VARCHAR(255) NOT NULL,
+  push_token    VARCHAR(255),
+  is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+  registered_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_active_device ON user_devices (user_id) WHERE is_active = TRUE;
+
+-- Scheduling
 CREATE TABLE IF NOT EXISTS shifts (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   department_id    UUID NOT NULL REFERENCES departments(id),
@@ -111,6 +153,41 @@ CREATE TABLE IF NOT EXISTS shift_swap_requests (
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS tasks (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title               VARCHAR(200) NOT NULL,
+  assigned_user_id    UUID NOT NULL,
+  assigned_by_user_id UUID NOT NULL,
+  status              VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_assigned_user ON tasks (assigned_user_id, status);
+
+CREATE TABLE IF NOT EXISTS shift_templates (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  department_id    UUID NOT NULL,
+  name             VARCHAR(120) NOT NULL,
+  start_time       TIME NOT NULL,
+  duration_hrs     INT NOT NULL,
+  required_cert_id UUID,
+  required_role    VARCHAR(40),
+  headcount        INT NOT NULL DEFAULT 1,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS outbox_events (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  aggregate_id   UUID NOT NULL,
+  aggregate_type VARCHAR(100) NOT NULL,
+  event_type     VARCHAR(100) NOT NULL,
+  payload        JSONB NOT NULL,
+  status         VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  processed_at   TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox_events (status);
+
+-- Attendance
 CREATE TABLE IF NOT EXISTS attendance_records (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id         UUID NOT NULL REFERENCES users(id),
@@ -126,6 +203,7 @@ CREATE TABLE IF NOT EXISTS attendance_records (
   captured_at     TIMESTAMPTZ NOT NULL,
   synced_at       TIMESTAMPTZ,
   is_offline_sync BOOLEAN NOT NULL DEFAULT FALSE,
+  requires_review BOOLEAN NOT NULL DEFAULT FALSE,
   client_uuid     UUID NOT NULL,
   UNIQUE (client_uuid)
 );
@@ -140,6 +218,7 @@ CREATE TABLE IF NOT EXISTS qr_codes (
   is_active    BOOLEAN NOT NULL DEFAULT TRUE
 );
 
+-- Fatigue
 CREATE TABLE IF NOT EXISTS fatigue_scores (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id            UUID NOT NULL REFERENCES users(id),
@@ -177,6 +256,7 @@ CREATE TABLE IF NOT EXISTS fatigue_self_reports (
   reported_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Notifications & emergency
 CREATE TABLE IF NOT EXISTS notifications (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id         UUID NOT NULL REFERENCES users(id),
@@ -199,7 +279,8 @@ CREATE TABLE IF NOT EXISTS emergency_musters (
   initiated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   closed_at         TIMESTAMPTZ,
   closed_by         UUID REFERENCES users(id),
-  expected_workers  INT NOT NULL,
+  status            muster_status NOT NULL DEFAULT 'ACTIVE',
+  expected_workers  INT NOT NULL DEFAULT 0,
   accounted_workers INT NOT NULL DEFAULT 0
 );
 
@@ -207,14 +288,58 @@ CREATE TABLE IF NOT EXISTS muster_responses (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   muster_id    UUID NOT NULL REFERENCES emergency_musters(id) ON DELETE CASCADE,
   user_id      UUID NOT NULL REFERENCES users(id),
-  status       VARCHAR(16) NOT NULL DEFAULT 'UNACCOUNTED',
+  status       response_status NOT NULL DEFAULT 'UNACCOUNTED',
   responded_at TIMESTAMPTZ,
   responded_by UUID REFERENCES users(id),
+  marked_by    UUID,
   loc_lat      DOUBLE PRECISION,
   loc_lng      DOUBLE PRECISION,
   UNIQUE (muster_id, user_id)
 );
 
+-- Reporting
+CREATE TABLE IF NOT EXISTS report_jobs (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type          VARCHAR(50) NOT NULL,
+  status        VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at  TIMESTAMPTZ,
+  parameters    TEXT,
+  file_path     TEXT,
+  error_message TEXT
+);
+
+CREATE TABLE IF NOT EXISTS reporting_fatigue_incidents (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL,
+  employee_no     VARCHAR(50) NOT NULL,
+  display_name    VARCHAR(100) NOT NULL,
+  alert_time      TIMESTAMPTZ NOT NULL,
+  overridden      BOOLEAN NOT NULL DEFAULT FALSE,
+  overridden_by   UUID,
+  override_reason TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS reporting_musters (
+  id                             UUID PRIMARY KEY,
+  zone                           UUID NOT NULL,
+  initiated_at                   TIMESTAMPTZ NOT NULL,
+  closed_at                      TIMESTAMPTZ,
+  expected_workers               INT NOT NULL DEFAULT 0,
+  accounted_workers              INT NOT NULL DEFAULT 0,
+  time_to_full_headcount_seconds INT
+);
+
+CREATE TABLE IF NOT EXISTS reporting_muster_unaccounted (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  muster_id    UUID NOT NULL REFERENCES reporting_musters(id) ON DELETE CASCADE,
+  user_id      UUID NOT NULL,
+  employee_no  VARCHAR(50) NOT NULL,
+  display_name VARCHAR(100) NOT NULL
+);
+
+-- Audit
 CREATE TABLE IF NOT EXISTS audit_log (
   id          BIGSERIAL PRIMARY KEY,
   actor_id    UUID REFERENCES users(id),

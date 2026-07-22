@@ -11,10 +11,13 @@ public class Department {
     @Id
     private UUID id;
 
+    @Column(name = "site_id", nullable = false)
+    private UUID siteId;
+
     @Column(nullable = false, length = 120)
     private String name;
 
-    @Column(name = "mine_zone", nullable = false, length = 80)
+    @Column(name = "mine_zone", length = 80)
     private String mineZone;
 
     @Column(name = "supervisor_id")
@@ -25,6 +28,9 @@ public class Department {
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
+
+    public UUID getSiteId() { return siteId; }
+    public void setSiteId(UUID siteId) { this.siteId = siteId; }
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }

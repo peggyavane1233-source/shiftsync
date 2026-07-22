@@ -13,7 +13,7 @@ public class LoginAttempt {
     @Column(name = "ip_address", nullable = false, length = 45)
     private String ipAddress;
 
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "citext")
     private String email;
 
     @Column(nullable = false)

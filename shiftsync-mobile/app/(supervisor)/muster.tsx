@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, FlatList, LayoutAnimation, UIManager, Platform, Alert } from 'react-native';
 import { Screen, Text, Card, Button, Spinner, TallyTag, TaskModal } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
-import { apiClient, USE_MOCK_API } from '../../src/api/client';
+import { apiClient, getUseMockApi } from '../../src/api/client';
 import { useKeepAwake } from 'expo-keep-awake';
 import { router } from 'expo-router';
 import { useStompWebSocket } from '../../src/hooks/useStompWebSocket';
@@ -42,11 +42,11 @@ export default function MusterScreen() {
     topic: musterId ? `/topic/musters/${musterId}` : '',
     onMessage: handleMusterUpdate,
     onReconnect: () => musterId && fetchStatus(musterId),
-    enabled: !USE_MOCK_API && !!musterId,
+    enabled: !getUseMockApi() && !!musterId,
   });
 
   useEffect(() => {
-    if (!USE_MOCK_API && musterId && status) setConnectionError(!wsConnected);
+    if (!getUseMockApi() && musterId && status) setConnectionError(!wsConnected);
   }, [wsConnected, musterId, status]);
 
   useEffect(() => {
@@ -66,7 +66,7 @@ export default function MusterScreen() {
 
   // Mock: poll status. Real: WebSocket.
   useEffect(() => {
-    if (!USE_MOCK_API || !musterId) return;
+    if (!getUseMockApi() || !musterId) return;
     const interval = setInterval(() => fetchStatus(musterId), 2000);
     return () => clearInterval(interval);
   }, [musterId, fetchStatus]);
