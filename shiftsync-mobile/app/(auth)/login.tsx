@@ -21,7 +21,7 @@ export default function LoginScreen() {
     }
 
     try {
-      await login(targetEmail, password || 'password123');
+      await login(targetEmail, password || '1234');
     } catch (e: any) {
       setError(e.message || 'AUTH FAILED.');
     }
@@ -79,7 +79,7 @@ export default function LoginScreen() {
 
         <View style={styles.demoSection}>
           <Text variant="label" style={{ color: theme.shadow, marginBottom: spacing.md, textAlign: 'center' }}>
-            [ OVERRIDE CODES ]
+            [ OVERRIDE CODES — PIN 1234 ]
           </Text>
           <View style={styles.demoButtons}>
             <TouchableOpacity

@@ -351,3 +351,101 @@ CREATE TABLE IF NOT EXISTS audit_log (
   ip_address  INET,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- =============================================================================
+-- UPGRADE PATH (re-runnable): bring older tables up to current production shape
+-- Safe when tables already exist without site_id / extra columns.
+-- =============================================================================
+
+-- Default site used to backfill existing department/cert rows
+INSERT INTO sites (id, name) VALUES
+('a0000000-0000-4000-8000-000000000001', 'Obuasi Mine')
+ON CONFLICT (id) DO NOTHING;
+
+-- departments: add site_id if missing (old schema had id, name, mine_zone only)
+ALTER TABLE departments ADD COLUMN IF NOT EXISTS site_id UUID;
+ALTER TABLE departments ADD COLUMN IF NOT EXISTS mine_zone VARCHAR(80);
+ALTER TABLE departments ADD COLUMN IF NOT EXISTS supervisor_id UUID;
+ALTER TABLE departments ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+UPDATE departments
+SET site_id = 'a0000000-0000-4000-8000-000000000001'
+WHERE site_id IS NULL;
+
+DO $$ BEGIN
+  ALTER TABLE departments
+    ALTER COLUMN site_id SET NOT NULL;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE departments
+    ADD CONSTRAINT departments_site_id_fkey FOREIGN KEY (site_id) REFERENCES sites(id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE departments
+    ADD CONSTRAINT departments_supervisor_id_fkey FOREIGN KEY (supervisor_id) REFERENCES users(id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- certifications: add site_id / description / expiry_days if missing
+ALTER TABLE certifications ADD COLUMN IF NOT EXISTS site_id UUID;
+ALTER TABLE certifications ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE certifications ADD COLUMN IF NOT EXISTS expiry_days INT;
+
+UPDATE certifications
+SET site_id = 'a0000000-0000-4000-8000-000000000001'
+WHERE site_id IS NULL;
+
+UPDATE certifications
+SET expiry_days = 365
+WHERE expiry_days IS NULL;
+
+DO $$ BEGIN
+  ALTER TABLE certifications
+    ALTER COLUMN site_id SET NOT NULL;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE certifications
+    ALTER COLUMN expiry_days SET NOT NULL;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE certifications
+    ADD CONSTRAINT certifications_site_id_fkey FOREIGN KEY (site_id) REFERENCES sites(id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- users: ensure common columns exist
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS department_id UUID;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+DO $$ BEGIN
+  ALTER TABLE users
+    ADD CONSTRAINT fk_users_department FOREIGN KEY (department_id) REFERENCES departments(id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- attendance extras used by attendance-service
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS requires_review BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS is_offline_sync BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- emergency muster extras
+ALTER TABLE emergency_musters ADD COLUMN IF NOT EXISTS closed_by UUID;
+ALTER TABLE emergency_musters ADD COLUMN IF NOT EXISTS expected_workers INT NOT NULL DEFAULT 0;
+ALTER TABLE emergency_musters ADD COLUMN IF NOT EXISTS accounted_workers INT NOT NULL DEFAULT 0;
+DO $$ BEGIN
+  ALTER TABLE emergency_musters
+    ADD COLUMN status muster_status NOT NULL DEFAULT 'ACTIVE';
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+ALTER TABLE muster_responses ADD COLUMN IF NOT EXISTS marked_by UUID;
+ALTER TABLE muster_responses ADD COLUMN IF NOT EXISTS responded_by UUID;
+ALTER TABLE muster_responses ADD COLUMN IF NOT EXISTS loc_lat DOUBLE PRECISION;
+ALTER TABLE muster_responses ADD COLUMN IF NOT EXISTS loc_lng DOUBLE PRECISION;
+
+-- fatigue extras
+ALTER TABLE fatigue_scores ADD COLUMN IF NOT EXISTS self_report_score INT;
+ALTER TABLE fatigue_alerts ADD COLUMN IF NOT EXISTS override_reason TEXT;
+ALTER TABLE fatigue_alerts ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ;

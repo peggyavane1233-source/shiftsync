@@ -59,7 +59,7 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}, isRetry 
 export const apiClient = {
   auth: {
     login: async (email: string, password?: string) => {
-      if (getUseMockApi()) return mockHandlers.auth.login(email);
+      if (getUseMockApi()) return mockHandlers.auth.login(email, password);
       return apiFetch<{ accessToken: string; refreshToken: string }>(ENDPOINTS.auth.login, {
         method: 'POST',
         body: JSON.stringify({ email, password })

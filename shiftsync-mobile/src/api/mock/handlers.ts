@@ -31,10 +31,13 @@ const createError = (error: string, message: string): ApiError => ({
 
 export const mockHandlers = {
   auth: {
-    login: async (email: string) => {
+    login: async (email: string, password?: string) => {
       await simulateNetwork();
       const user = db.getUserByEmail(email);
-      if (!user) throw createError('UNAUTHORIZED', 'Invalid credentials');
+      // Dev PIN for all seeded mock users
+      if (!user || (password != null && password !== '' && password !== '1234')) {
+        throw createError('UNAUTHORIZED', 'Invalid credentials');
+      }
       return { accessToken: 'mock-jwt-token', refreshToken: 'mock-refresh-token' };
     }
   },
