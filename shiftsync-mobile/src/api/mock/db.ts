@@ -6,8 +6,16 @@
 
 import { generateSeedData } from './seed';
 
+export type FatigueOverride = {
+  userId: string;
+  reason: string;
+  overriddenAt: string;
+};
+
 class MockDatabase {
   public data = generateSeedData();
+  /** Active supervisor overrides that allow CRITICAL workers to check in. */
+  public fatigueOverrides: FatigueOverride[] = [];
 
   // Helper methods to query the mock DB
   getUser(id: string) {
@@ -34,10 +42,21 @@ class MockDatabase {
     return this.data.assignments.find(a => a.userId === userId && a.shiftId === shiftId);
   }
 
-  hasOverride(userId: string, shiftId: string) {
-    // In a real system, alerts and overrides are linked. 
-    // For the mock, we'll assume no overrides exist initially.
-    return false;
+  hasOverride(userId: string, _shiftId?: string) {
+    return this.fatigueOverrides.some(o => o.userId === userId);
+  }
+
+  setOverride(userId: string, reason: string) {
+    this.fatigueOverrides = this.fatigueOverrides.filter(o => o.userId !== userId);
+    this.fatigueOverrides.push({
+      userId,
+      reason,
+      overriddenAt: new Date().toISOString(),
+    });
+  }
+
+  clearOverride(userId: string) {
+    this.fatigueOverrides = this.fatigueOverrides.filter(o => o.userId !== userId);
   }
 
   getUserCerts(userId: string) {

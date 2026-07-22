@@ -143,10 +143,14 @@ export const apiClient = {
     },
     selfReport: async (req: { sleepHours: number; alertness: number }) => {
       if (USE_MOCK_API) return mockHandlers.fatigue.selfReport(req, currentUserId);
-      return apiFetch<any>('/v1/fatigue/self-report', {
+      return apiFetch<any>(ENDPOINTS.fatigue.selfReport, {
         method: 'POST',
         body: JSON.stringify(req)
       });
+    },
+    heatmap: async () => {
+      if (USE_MOCK_API) return mockHandlers.fatigue.heatmap();
+      return apiFetch<any>(ENDPOINTS.fatigue.heatmap);
     }
   },
   notifications: {

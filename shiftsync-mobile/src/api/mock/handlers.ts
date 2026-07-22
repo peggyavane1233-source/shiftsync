@@ -291,9 +291,14 @@ export const mockHandlers = {
       const fatigue = db.getFatigueScore(userId);
       if (fatigue) {
          fatigue.hoursWorked24h += 8; // mock 8 hours
-         fatigue.score += 20;
+         fatigue.hoursWorked7d += 8;
+         fatigue.consecutiveDays += 1;
+         fatigue.score = Math.min(100, fatigue.score + 20);
          if (fatigue.score >= 80) fatigue.riskLevel = 'CRITICAL';
-         else if (fatigue.score >= 60) fatigue.riskLevel = 'ADVISORY';
+         else if (fatigue.score >= 60) fatigue.riskLevel = 'WARNING';
+         else if (fatigue.score >= 40) fatigue.riskLevel = 'ADVISORY';
+         else fatigue.riskLevel = 'LOW';
+         if (fatigue.riskLevel !== 'CRITICAL') db.clearOverride(userId);
       }
 
       return record;
@@ -342,79 +347,150 @@ export const mockHandlers = {
   fatigue: {
     me: async (userId: string) => {
       await simulateNetwork();
-      const f = db.getFatigueScore(userId);
+      let f = db.getFatigueScore(userId);
       if (!f) {
-        // Return a safe default instead of crashing if the mock user isn't seeded
-        return {
+        f = {
+          id: uuid.v4() as string,
           userId,
-          score: 85,
-          riskLevel: 'CRITICAL',
-          lastAssessment: null,
-          history: []
+          calculatedAt: new Date().toISOString(),
+          hoursWorked24h: 8,
+          hoursWorked7d: 40,
+          nightShifts7d: 0,
+          consecutiveDays: 3,
+          score: 35,
+          riskLevel: 'LOW',
+          modelVersion: 'FAID-mock-v1',
+          history: [{ date: new Date().toISOString(), score: 35 }],
         };
+        db.data.fatigueScores.push(f);
       }
-      return f;
+      return {
+        ...f,
+        nightShifts: f.nightShifts7d, // UI alias
+        hasOverride: db.hasOverride(userId),
+      };
     },
     selfReport: async (req: any, userId: string) => {
       await simulateNetwork();
-      const f = db.getFatigueScore(userId);
-      if (f) {
-        f.lastAssessment = {
-          date: new Date().toISOString(),
-          sleepHours: req.sleepHours,
-          alertness: req.alertness
+      let f = db.getFatigueScore(userId);
+      if (!f) {
+        f = {
+          id: uuid.v4() as string,
+          userId,
+          calculatedAt: new Date().toISOString(),
+          hoursWorked24h: 8,
+          hoursWorked7d: 40,
+          nightShifts7d: 0,
+          consecutiveDays: 3,
+          score: 40,
+          riskLevel: 'ADVISORY',
+          modelVersion: 'FAID-mock-v1',
+          history: [],
         };
-
-        // Dynamically calculate new score based on self-report
-        let newScore = 40; // Base baseline
-        
-        // Sleep penalty
-        if (req.sleepHours < 5) newScore += 40;
-        else if (req.sleepHours < 6) newScore += 20;
-        else if (req.sleepHours < 7) newScore += 10;
-        else if (req.sleepHours > 9) newScore += 5; // Oversleep grogginess
-
-        // Alertness penalty
-        if (req.alertness === 1) newScore += 40;
-        else if (req.alertness === 2) newScore += 20;
-        else if (req.alertness === 3) newScore += 10;
-        
-        // Add historical compounding
-        newScore += (f.consecutiveDays * 2);
-
-        // Cap at 100
-        f.score = Math.min(100, newScore);
-
-        if (f.score >= 80) f.riskLevel = 'CRITICAL';
-        else if (f.score >= 60) f.riskLevel = 'WARNING';
-        else if (f.score >= 40) f.riskLevel = 'ADVISORY';
-        else f.riskLevel = 'LOW';
-
-        // Update the last entry of history to reflect this immediate change
-        if (f.history && f.history.length > 0) {
-          f.history[f.history.length - 1]!.score = f.score;
-        }
+        db.data.fatigueScores.push(f);
       }
-      return f;
+
+      f.lastAssessment = {
+        date: new Date().toISOString(),
+        sleepHours: req.sleepHours,
+        alertness: req.alertness,
+      };
+      f.selfReportScore = req.alertness;
+      f.calculatedAt = new Date().toISOString();
+
+      // Dynamically calculate new score based on self-report
+      let newScore = 20 + Math.min(30, f.hoursWorked24h * 2);
+
+      // Sleep penalty
+      if (req.sleepHours < 5) newScore += 40;
+      else if (req.sleepHours < 6) newScore += 20;
+      else if (req.sleepHours < 7) newScore += 10;
+      else if (req.sleepHours > 9) newScore += 5; // Oversleep grogginess
+
+      // Alertness penalty
+      if (req.alertness === 1) newScore += 40;
+      else if (req.alertness === 2) newScore += 20;
+      else if (req.alertness === 3) newScore += 10;
+
+      // Historical compounding
+      newScore += f.consecutiveDays * 2;
+      newScore += f.nightShifts7d * 5;
+
+      f.score = Math.min(100, Math.round(newScore));
+
+      if (f.score >= 80) f.riskLevel = 'CRITICAL';
+      else if (f.score >= 60) f.riskLevel = 'WARNING';
+      else if (f.score >= 40) f.riskLevel = 'ADVISORY';
+      else f.riskLevel = 'LOW';
+
+      if (f.riskLevel !== 'CRITICAL') db.clearOverride(userId);
+
+      if (!f.history) f.history = [];
+      if (f.history.length === 0) {
+        f.history.push({ date: new Date().toISOString(), score: f.score });
+      } else {
+        f.history[f.history.length - 1]!.score = f.score;
+        f.history[f.history.length - 1]!.date = new Date().toISOString();
+      }
+
+      return {
+        ...f,
+        nightShifts: f.nightShifts7d,
+        hasOverride: db.hasOverride(userId),
+      };
     },
     listAlerts: async () => {
       await simulateNetwork();
-      // Mock: return critical alerts for demo
+      // Open blocks: CRITICAL without an active supervisor override
       return db.data.fatigueScores
-        .filter(f => f.riskLevel === 'CRITICAL' || f.riskLevel === 'WARNING')
-        .sort((a, b) => (a.riskLevel === 'CRITICAL' ? -1 : 1));
+        .filter(f => f.riskLevel === 'CRITICAL' && !db.hasOverride(f.userId))
+        .sort((a, b) => b.score - a.score)
+        .map(f => {
+          const user = db.getUser(f.userId);
+          return {
+            ...f,
+            nightShifts: f.nightShifts7d,
+            workerName: user?.displayName || `Worker ${f.userId.slice(-4)}`,
+            employeeNo: user?.employeeNo,
+          };
+        });
     },
     overrideAlert: async (userId: string, reason: string) => {
       await simulateNetwork();
       if (reason.length < 20) throw createError('VALIDATION', 'Reason must be at least 20 chars');
-      
+
       const score = db.getFatigueScore(userId);
-      if (score) {
-        // Log override, clear block
-        score.riskLevel = 'WARNING'; // Downgrade to allow work
-      }
-      return { success: true };
-    }
+      if (!score) throw createError('NOT_FOUND', 'No fatigue score for this worker');
+
+      db.setOverride(userId, reason);
+      // Keep CRITICAL score for audit/display, but check-in is allowed via hasOverride
+      return { success: true, userId, riskLevel: score.riskLevel, score: score.score };
+    },
+    heatmap: async () => {
+      await simulateNetwork();
+      const dayLabels = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+      const workers = db.data.users
+        .filter(u => u.role === 'WORKER')
+        .slice(0, 8)
+        .map(u => {
+          const f = db.getFatigueScore(u.id);
+          const hist = f?.history?.slice(-7) || [];
+          // Pad to 7 days if history is shorter
+          const scores = Array.from({ length: 7 }, (_, i) => {
+            const point = hist[i] || hist[hist.length - 1];
+            return point ? point.score : (f?.score ?? 20);
+          });
+          return {
+            id: u.id,
+            name: u.displayName,
+            employeeNo: u.employeeNo,
+            scores,
+            riskLevel: f?.riskLevel || 'LOW',
+          };
+        });
+
+      return { days: dayLabels, workers };
+    },
   },
   notifications: {
     me: async (userId: string) => {

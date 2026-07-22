@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import Svg, { Path, Polygon, Line, Circle } from 'react-native-svg';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import Svg, { Path, Polygon, Line, Circle, Polyline } from 'react-native-svg';
 import { router } from 'expo-router';
 import { Screen, Text, Card, Button } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { apiClient } from '../../src/api/client';
-import { offlineWrite } from '../../src/offline/write';
 
 // Math for Gauge
 const GAUGE_START_ANGLE = 150;
@@ -67,10 +66,14 @@ export default function FatigueScreen() {
     if (alertness === null) return;
     setSubmitting(true);
     try {
-      await offlineWrite('/v1/fatigue/self-report', 'POST', { sleepHours, alertness });
-      await loadData();
-    } catch (e) {
-      console.error(e);
+      const updated = await apiClient.fatigue.selfReport({ sleepHours, alertness });
+      setFatigue(updated);
+      Alert.alert(
+        'Assessment Updated',
+        `Your fatigue score is now ${updated.score} (${updated.riskLevel}).`
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to save assessment.');
     } finally {
       setSubmitting(false);
     }
@@ -81,6 +84,13 @@ export default function FatigueScreen() {
 
   const score = fatigue.score;
   const isCritical = fatigue.riskLevel === 'CRITICAL';
+  const hasOverride = !!fatigue.hasOverride;
+  const nightShifts = fatigue.nightShifts7d ?? fatigue.nightShifts ?? 0;
+  const hours24 = fatigue.hoursWorked24h ?? 0;
+  const hours7d = fatigue.hoursWorked7d ?? 0;
+  const consecutiveDays = fatigue.consecutiveDays ?? 0;
+  // Sleep risk contribution: fewer hours → higher bar
+  const sleepRisk = Math.max(0, Math.min(15, Math.round((8 - sleepHours) * 3)));
   
   const getRiskColor = (level: string) => {
     if (level === 'CRITICAL') return theme.critical;
@@ -111,12 +121,20 @@ export default function FatigueScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
 
         {/* CRITICAL OVERRIDE BAR */}
-        {isCritical && (
+        {isCritical && !hasOverride && (
           <View style={[styles.criticalBar, { backgroundColor: theme.danger }]}>
             <Text variant="title" weight="bold" style={{ color: '#000000', marginBottom: spacing.sm }}>
               ⛔ YOU CANNOT START YOUR NEXT SHIFT WITHOUT SUPERVISOR APPROVAL.
             </Text>
-            <Button title="REQUEST APPROVAL" variant="secondary" onPress={() => router.back()} />
+            <Button title="BACK TO ROSTER" variant="secondary" onPress={() => router.back()} />
+          </View>
+        )}
+
+        {isCritical && hasOverride && (
+          <View style={[styles.criticalBar, { backgroundColor: theme.warning }]}>
+            <Text variant="title" weight="bold" style={{ color: '#000000' }}>
+              SUPERVISOR OVERRIDE ACTIVE — CHECK-IN ALLOWED
+            </Text>
           </View>
         )}
 
@@ -161,11 +179,11 @@ export default function FatigueScreen() {
           <Text variant="label" style={{ color: theme.shadow, marginBottom: spacing.md }}>WHY YOUR RISK IS HIGH</Text>
           <View style={{ borderBottomWidth: 1, borderBottomColor: theme.rule, marginBottom: spacing.sm }} />
           
-          <BreakdownRow label="Hours worked, last 24h" raw={`${fatigue.hoursWorked24h} h`} val={8} max={30} theme={theme} />
-          <BreakdownRow label="Hours worked, last 7 days" raw={`${fatigue.hoursWorked7d} h`} val={19} max={20} theme={theme} />
-          <BreakdownRow label="Night shifts, last 7 days" raw={`${fatigue.nightShifts}`} val={15} max={20} theme={theme} />
-          <BreakdownRow label="Days without a rest day" raw={`${fatigue.consecutiveDays}`} val={13} max={15} theme={theme} />
-          <BreakdownRow label="Sleep reported last night" raw={`${sleepHours} h`} val={19} max={15} theme={theme} />
+          <BreakdownRow label="Hours worked, last 24h" raw={`${hours24} h`} val={hours24} max={16} theme={theme} />
+          <BreakdownRow label="Hours worked, last 7 days" raw={`${hours7d} h`} val={hours7d} max={56} theme={theme} />
+          <BreakdownRow label="Night shifts, last 7 days" raw={`${nightShifts}`} val={nightShifts} max={7} theme={theme} />
+          <BreakdownRow label="Days without a rest day" raw={`${consecutiveDays}`} val={consecutiveDays} max={14} theme={theme} />
+          <BreakdownRow label="Sleep reported last night" raw={`${sleepHours} h`} val={sleepRisk} max={15} theme={theme} />
           
           <View style={{ borderTopWidth: 1, borderTopColor: theme.rule, marginTop: spacing.sm, paddingTop: spacing.md, flexDirection: 'row', justifyContent: 'flex-end' }}>
             <Text variant="label" style={{ color: theme.shadow, marginRight: spacing.md }}>TOTAL</Text>
@@ -201,7 +219,7 @@ export default function FatigueScreen() {
 
         {/* SELF-REPORT */}
         <Text variant="label" style={{ color: theme.shadow, marginTop: spacing.xl, marginBottom: spacing.md }}>
-          SELF-REPORT (OPTIONAL)
+          SELF-REPORT
         </Text>
         <Card padding="md" style={styles.breakdownCard}>
           <Text variant="body" style={{ color: theme.headlamp, marginBottom: spacing.md }}>How many hours did you sleep?</Text>
@@ -252,16 +270,14 @@ export default function FatigueScreen() {
   );
 }
 
-// Helpers
-import { Polyline } from 'react-native-svg';
-
 function BreakdownRow({ label, raw, val, max, theme }: { label: string, raw: string, val: number, max: number, theme: any }) {
+  const capped = Math.min(val, max);
   return (
     <View style={styles.breakdownRow}>
       <Text variant="body" style={{ color: theme.headlamp, flex: 2 }}>{label}</Text>
       <Text variant="data" style={{ color: theme.dust, width: 60, textAlign: 'right' }}>{raw}</Text>
-      <Text variant="data" style={{ color: theme.warning, width: 100, textAlign: 'center' }}>{getBlockBar(val, max)}</Text>
-      <Text variant="data" style={{ color: theme.headlamp, width: 60, textAlign: 'right' }}>{val} / {max}</Text>
+      <Text variant="data" style={{ color: theme.warning, width: 100, textAlign: 'center' }}>{getBlockBar(capped, max)}</Text>
+      <Text variant="data" style={{ color: theme.headlamp, width: 60, textAlign: 'right' }}>{capped} / {max}</Text>
     </View>
   );
 }

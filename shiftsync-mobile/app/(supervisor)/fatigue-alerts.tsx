@@ -80,7 +80,7 @@ export default function FatigueAlertsScreen() {
             Override Fatigue Block
           </Text>
           <Text variant="md" style={{ marginBottom: spacing.lg }}>
-            Worker {selectedAlert.userId.slice(-4)} has a fatigue score of {selectedAlert.score} ({selectedAlert.riskLevel}).
+            {selectedAlert.workerName || `Worker ${selectedAlert.userId.slice(-4)}`} has a fatigue score of {selectedAlert.score} ({selectedAlert.riskLevel}).
           </Text>
 
           {/* SAFETY: Explicit warning to the supervisor about auditability */}
@@ -154,7 +154,7 @@ export default function FatigueAlertsScreen() {
           return (
             <Card style={[styles.card, item.riskLevel === 'CRITICAL' && { borderColor: theme.critical, borderWidth: 2 }]}>
               <View style={{ flex: 1, marginBottom: spacing.md }}>
-                <Text variant="lg" weight="bold">Worker {item.userId.slice(-4)}</Text>
+                <Text variant="lg" weight="bold">{item.workerName || `Worker ${item.userId.slice(-4)}`}</Text>
                 <Text variant="md" color="textMuted">
                   Score: <Text weight="bold" style={{ color: item.riskLevel === 'CRITICAL' ? theme.critical : theme.warning }}>{item.score}</Text> ({item.riskLevel})
                 </Text>

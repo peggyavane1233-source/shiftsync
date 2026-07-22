@@ -10,6 +10,7 @@ export default function ShiftDetailsScreen() {
   const theme = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [shift, setShift] = useState<any>(null);
+  const [usersById, setUsersById] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   const loadData = async () => {
@@ -17,6 +18,12 @@ export default function ShiftDetailsScreen() {
       const data = await apiClient.supervisor.listShifts();
       const match = data.find((s: any) => s.id === id);
       setShift(match);
+      const users = await apiClient.users.list();
+      const map: Record<string, string> = {};
+      users.forEach((u: any) => {
+        map[u.id] = u.displayName || u.email || u.id;
+      });
+      setUsersById(map);
     } catch (e) {
       console.error(e);
     } finally {
@@ -28,8 +35,13 @@ export default function ShiftDetailsScreen() {
 
   const handleApproveSwap = async (assignmentId: string) => {
     try {
-      // In a real app we might pick the replacement user. Mock just auto-approves.
-      await apiClient.shifts.approveSwap(assignmentId, 'mock-replacement-id');
+      if (!shift) return;
+      const assignment = shift.assignments.find((a: any) => a.id === assignmentId);
+      if (!assignment) return;
+      const available = await apiClient.shifts.availableWorkers(shift.id);
+      const replacement = available.find((w: any) => w.id !== assignment.userId);
+      const replacementId = replacement?.id || assignment.userId;
+      await apiClient.shifts.approveSwap(assignmentId, replacementId);
       loadData();
     } catch (e) {
       Alert.alert('Error', 'Failed to approve swap.');
@@ -47,8 +59,7 @@ export default function ShiftDetailsScreen() {
           style: "destructive", 
           onPress: async () => {
             try {
-              // Wait, the mock API currently doesn't have a cancelShift method, but we can just pop back for the demo
-              // await apiClient.shifts.cancel(id);
+              await apiClient.shifts.cancel(id);
               router.back();
             } catch (e) {
               Alert.alert('Error', 'Failed to cancel shift.');
@@ -82,7 +93,9 @@ export default function ShiftDetailsScreen() {
             <Card key={assignment.id} style={{ marginBottom: spacing.sm, backgroundColor: theme.anthracite, borderColor: isSwapPending ? theme.primary : theme.rule }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <View style={{ flex: 1 }}>
-                  <Text variant="label" style={{ color: theme.text }}>WORKER {assignment.userId.slice(-4).toUpperCase()}</Text>
+                  <Text variant="label" style={{ color: theme.text }}>
+                    {usersById[assignment.userId] || `WORKER ${assignment.userId.slice(-4).toUpperCase()}`}
+                  </Text>
                   <Text variant="data" style={{ color: theme.dust, marginTop: 4 }}>
                     Status: {assignment.status}
                   </Text>

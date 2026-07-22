@@ -6,7 +6,6 @@ import { spacing, useTheme } from '../../src/theme';
 import { fetchRoster, RosterResponse } from '../../src/features/roster/api';
 import { apiClient } from '../../src/api/client';
 import { ShiftWithAssignment, Task } from '../../src/api/types';
-import { offlineWrite } from '../../src/offline/write';
 import { format, parseISO, addDays, startOfDay, isSameDay } from 'date-fns';
 import { useAuth } from '../../src/features/auth';
 import { useCountdown } from '../../src/hooks/useCountdown';
@@ -48,7 +47,7 @@ export default function WorkerDashboard() {
 
   const handleConfirm = async (assignmentId: string) => {
     try {
-      await offlineWrite(`/v1/shifts/${assignmentId}/confirm`, 'POST', {});
+      await apiClient.shifts.confirm(assignmentId);
       await loadData();
     } catch (e) {
       console.error(e);

@@ -6,7 +6,6 @@ import { spacing, useTheme } from '../../../src/theme';
 import { fetchRoster } from '../../../src/features/roster/api';
 import { ShiftWithAssignment } from '../../../src/api/types';
 import { apiClient } from '../../../src/api/client';
-import { offlineWrite } from '../../../src/offline/write';
 import { format, parseISO } from 'date-fns';
 
 export default function ShiftDetailScreen() {
@@ -41,7 +40,7 @@ export default function ShiftDetailScreen() {
   const handleConfirm = async () => {
     if (!shift) return;
     try {
-      await offlineWrite(`/v1/shifts/${shift.assignmentId}/confirm`, 'POST', {});
+      await apiClient.shifts.confirm(shift.assignmentId);
       await loadData();
     } catch (e) {
       console.error(e);
